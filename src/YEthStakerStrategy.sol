@@ -26,10 +26,13 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 contract YEthStakerStrategy is BaseStrategy {
     using SafeERC20 for ERC20;
 
-    ICurvePool public curvepool = ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22); // 0 is WETH, 1 is yETH
+    ICurvePool public curvepool =
+        ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22); // 0 is WETH, 1 is yETH
     ERC20 public WETH = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-    ERC20 public constant yETH = ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
-    IYEthStaker public constant styETH = IYEthStaker(0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4); 
+    ERC20 public constant yETH =
+        ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
+    IYEthStaker public constant styETH =
+        IYEthStaker(0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4);
 
     int128 internal constant WETH_INDEX = 0;
     int128 internal constant yETH_INDEX = 1;
@@ -62,7 +65,7 @@ contract YEthStakerStrategy is BaseStrategy {
     function _deployFunds(uint256 _amount) internal override {
         // uint256 minAmountOut = _amount * 99 / 100; // TODO: change this calculation
         curvepool.exchange(WETH_INDEX, yETH_INDEX, _amount, 0); //TODO: determine correct min_dy
-        
+
         // stakes any idle yeth not only the output from exchanging eth
         styETH.deposit(yETH.balanceOf(address(this)));
     }
@@ -89,10 +92,19 @@ contract YEthStakerStrategy is BaseStrategy {
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
-        uint256 _amountInYETH = curvepool.get_dy(yETH_INDEX, WETH_INDEX, _amount);
+        uint256 _amountInYETH = curvepool.get_dy(
+            yETH_INDEX,
+            WETH_INDEX,
+            _amount
+        );
 
         styETH.withdraw(_amountInYETH);
-        curvepool.exchange(yETH_INDEX, WETH_INDEX, Math.min(_amountInYETH, yETH.balanceOf(address(this))) , 0);//TODO: check for min output
+        curvepool.exchange(
+            yETH_INDEX,
+            WETH_INDEX,
+            Math.min(_amountInYETH, yETH.balanceOf(address(this))),
+            0
+        ); //TODO: check for min output
     }
 
     /**
@@ -141,8 +153,8 @@ contract YEthStakerStrategy is BaseStrategy {
      */
     function _balanceInAssetValue() internal view returns (uint256) {
         // idle yETH + staked yETH
-        uint256 yethInEth = yETH.balanceOf(address(this))
-            + styETH.convertToAssets(styETH.balanceOf(address(this)));
+        uint256 yethInEth = yETH.balanceOf(address(this)) +
+            styETH.convertToAssets(styETH.balanceOf(address(this)));
         if (yethInEth > 0) {
             // get swap output, curve reverts for 0 values
             yethInEth = curvepool.get_dy(yETH_INDEX, WETH_INDEX, yethInEth);
