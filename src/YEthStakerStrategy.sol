@@ -31,10 +31,18 @@ contract YEthStakerStrategy is BaseStrategy {
     ERC20 public constant yETH = ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
     IYEthStaker public constant styETH = IYEthStaker(0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4); 
 
+    int128 internal constant WETH_INDEX = 0;
+    int128 internal constant yETH_INDEX = 1;
+
     constructor(
         address _asset,
         string memory _name
-    ) BaseStrategy(_asset, _name) {}
+    ) BaseStrategy(_asset, _name) {
+        require(_asset == address(WETH), "Asset!=WETH");
+        WETH.approve(address(curvepool), type(uint256).max);
+        yETH.approve(address(curvepool), type(uint256).max);
+        yETH.approve(address(styETH), type(uint256).max);
+    }
 
     /*//////////////////////////////////////////////////////////////
                 NEEDED TO BE OVERRIDDEN BY STRATEGIST
@@ -52,7 +60,8 @@ contract YEthStakerStrategy is BaseStrategy {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        curvepool.exchange(0, 1, _amount, 0); //TODO: determine correct min_dy
+        // uint256 minAmountOut = _amount * 99 / 100; // TODO: change this calculation
+        curvepool.exchange(WETH_INDEX, yETH_INDEX, _amount, 0); //TODO: determine correct min_dy
         
         // stakes any idle yeth not only the output from exchanging eth
         styETH.deposit(yETH.balanceOf(address(this)));
@@ -80,11 +89,11 @@ contract YEthStakerStrategy is BaseStrategy {
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
-        uint256 _amountNeeded = curvepool.get_dy(1, 0, _amount);
+        uint256 _amountInYETH = curvepool.get_dy(yETH_INDEX, WETH_INDEX, _amount);
 
-        styETH.withdraw(_amountNeeded);
-        curvepool.exchange(0, 1, Math.min(_amountNeeded, asset.balanceOf(address(this))) , 0);//TODO: check for min output
-    } 
+        styETH.withdraw(_amountInYETH);
+        curvepool.exchange(yETH_INDEX, WETH_INDEX, Math.min(_amountInYETH, yETH.balanceOf(address(this))) , 0);//TODO: check for min output
+    }
 
     /**
      * @dev Internal function to harvest all rewards, redeploy any idle
@@ -115,10 +124,30 @@ contract YEthStakerStrategy is BaseStrategy {
     {
         // TODO: Implement harvesting logic and accurate accounting EX:
         //
-        if(!TokenizedStrategy.isShutdown()) {
-            _deployFunds(asset.balanceOf(address(this)));
+        if (!TokenizedStrategy.isShutdown()) {
+            uint256 balance = asset.balanceOf(address(this));
+            if (balance > 0) {
+                _deployFunds(balance);
+            }
         }
-        _totalAssets = styETH.convertToAssets(styETH.balanceOf(this)) + asset.balanceOf(address(this)) + yETH.balanceOf(address(this));
+        _totalAssets = _balanceInAssetValue();
+    }
+
+    /**
+     * @dev Internal function to calculate the value of different assets
+     * in asset value.
+     *
+     * @return total value in asset value
+     */
+    function _balanceInAssetValue() internal view returns (uint256) {
+        // idle yETH + staked yETH
+        uint256 yethInEth = yETH.balanceOf(address(this))
+            + styETH.convertToAssets(styETH.balanceOf(address(this)));
+        if (yethInEth > 0) {
+            // get swap output, curve reverts for 0 values
+            yethInEth = curvepool.get_dy(yETH_INDEX, WETH_INDEX, yethInEth);
+        }
+        return yethInEth + asset.balanceOf(address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -207,16 +236,12 @@ contract YEthStakerStrategy is BaseStrategy {
      *
      * @param . The address that is withdrawing from the strategy.
      * @return . The available amount that can be withdrawn in terms of `asset`
-     *
+     */
     function availableWithdrawLimit(
         address _owner
     ) public view override returns (uint256) {
-        TODO: If desired Implement withdraw limit logic and any needed state variables.
-        
-        EX:    
-            return asset.balanceOf(address(this));
+        return _balanceInAssetValue();
     }
-    */
 
     /**
      * @dev Optional function for a strategist to override that will
