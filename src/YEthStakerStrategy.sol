@@ -3,6 +3,9 @@ pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ICurvePool} from "./interfaces/ICurvePool.sol";
+import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 // Import interfaces for many popular DeFi projects, or add your own!
 //import "../interfaces/<protocol>/<Interface>.sol";
@@ -20,8 +23,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 // NOTE: To implement permissioned functions you can use the onlyManagement, onlyEmergencyAuthorized and onlyKeepers modifiers
 
-contract Strategy is BaseStrategy {
+contract YEthStakerStrategy is BaseStrategy {
     using SafeERC20 for ERC20;
+
+    ICurvePool public curvepool = ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22); // 0 is WETH, 1 is yETH
+    ERC20 public WETH = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    ERC20 public constant yETH = ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
+    IYEthStaker public constant styETH = IYEthStaker(0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4); 
 
     constructor(
         address _asset,
@@ -44,9 +52,10 @@ contract Strategy is BaseStrategy {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        // TODO: implement deposit logic EX:
-        //
-        //      lendingPool.deposit(address(asset), _amount ,0);
+        curvepool.exchange(0, 1, _amount, 0); //TODO: determine correct min_dy
+        
+        // stakes any idle yeth not only the output from exchanging eth
+        styETH.deposit(yETH.balanceOf(address(this)));
     }
 
     /**
@@ -71,10 +80,11 @@ contract Strategy is BaseStrategy {
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
-        // TODO: implement withdraw logic EX:
-        //
-        //      lendingPool.withdraw(address(asset), _amount);
-    }
+        uint256 _amountNeeded = curvepool.get_dy(1, 0, _amount);
+
+        styETH.withdraw(_amountNeeded);
+        curvepool.exchange(0, 1, Math.min(_amountNeeded, asset.balanceOf(address(this))) , 0);//TODO: check for min output
+    } 
 
     /**
      * @dev Internal function to harvest all rewards, redeploy any idle
@@ -105,12 +115,10 @@ contract Strategy is BaseStrategy {
     {
         // TODO: Implement harvesting logic and accurate accounting EX:
         //
-        //      if(!TokenizedStrategy.isShutdown()) {
-        //          _claimAndSellRewards();
-        //      }
-        //      _totalAssets = aToken.balanceOf(address(this)) + asset.balanceOf(address(this));
-        //
-        _totalAssets = asset.balanceOf(address(this));
+        if(!TokenizedStrategy.isShutdown()) {
+            _deployFunds(asset.balanceOf(address(this)));
+        }
+        _totalAssets = styETH.convertToAssets(styETH.balanceOf(this)) + asset.balanceOf(address(this)) + yETH.balanceOf(address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
