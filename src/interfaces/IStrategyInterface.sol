@@ -5,4 +5,5 @@ import {IStrategy} from "@tokenized-strategy/interfaces/IStrategy.sol";
 
 interface IStrategyInterface is IStrategy {
     //TODO: Add your specific implementation interface in here.
+    function curvepool() external view returns (address);
 }
