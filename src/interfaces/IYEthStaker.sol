@@ -8,5 +8,6 @@ interface IYEthStaker {
     function balanceOf(address _user) external view returns (uint256);
     function convertToAssets(uint256 _shares) external view returns (uint256);
     function convertToShares(uint256 _assets) external view returns (uint256);
+    function maxWithdraw(address _user) external view returns (uint256);
     function update_amounts() external;
 }

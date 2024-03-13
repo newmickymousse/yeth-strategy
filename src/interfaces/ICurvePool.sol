@@ -13,4 +13,5 @@ interface ICurvePool {
         int128 j,
         uint256 dx
     ) external view returns (uint256);
+    function ema_price() external view returns (uint256);
 }

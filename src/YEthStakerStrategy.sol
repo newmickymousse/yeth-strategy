@@ -38,14 +38,14 @@ contract YEthStakerStrategy is BaseStrategy {
         IYEthPool(0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63);
 
     int128 internal constant WETH_INDEX = 0;
-    int128 internal constant yETH_INDEX = 1;
+    int128 internal constant YETH_INDEX = 1;
     uint256 internal constant MAX_BPS = 10000;
+    uint256 internal constant WAD = 1e18;
 
     address immutable GOV;
 
-    /// @notice Value in BPS how much are WETH and yETH pagged.
-    /// 10000 is equal to 1:1
-    uint256 public peg = 9900;
+    uint256 public maxSingleWithdraw = 100 * 1e18;
+    uint256 public swapSlippage = 50;
 
     constructor(
         address _asset,
@@ -76,8 +76,17 @@ contract YEthStakerStrategy is BaseStrategy {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        uint256 minAmountOut = (_amount * peg) / MAX_BPS; // TODO: change this calculation
-        curvepool.exchange(WETH_INDEX, yETH_INDEX, _amount, minAmountOut); //TODO: determine correct min_dy
+        if (_amount < WAD) {
+            // no need to swap dust
+            return;
+        }
+
+        uint256 amountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
+        if (amountOut < _amount) {
+            // only use curve pool if we can get at least 1:1
+            return;
+        }
+        curvepool.exchange(WETH_INDEX, YETH_INDEX, _amount, _amount);
 
         // stakes any idle yeth not only the output from exchanging eth
         styETH.deposit(yETH.balanceOf(address(this)));
@@ -105,23 +114,14 @@ contract YEthStakerStrategy is BaseStrategy {
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
-        uint256 _amountInYETH = curvepool.get_dy(
-            yETH_INDEX,
-            WETH_INDEX,
-            _amount
-        );
-
-        styETH.withdraw(_amountInYETH);
-        uint256 yETHInput = Math.min(
-            _amountInYETH,
-            yETH.balanceOf(address(this))
-        );
-        curvepool.exchange(
-            yETH_INDEX,
-            WETH_INDEX,
-            yETHInput,
-            (yETHInput * peg) / MAX_BPS
-        );
+        uint256 debt = TokenizedStrategy.totalAssets() - asset.balanceOf(address(this));
+        // calculate equivalent share of st-yETH
+        uint256 stakedAmount = styETH.balanceOf(address(this)) * _amount / debt;
+        // redeem for yETH
+        uint256 swapAmount = styETH.redeem(stakedAmount);
+        // calculate minimum out amount based on EMA oracle and a configurable slippage
+        uint256 minAmountOut = swapAmount * (MAX_BPS - swapSlippage) / MAX_BPS * curvepool.ema_price() / WAD;
+        curvepool.exchange(YETH_INDEX, WETH_INDEX, swapAmount, minAmountOut);
     }
 
     /**
@@ -169,21 +169,26 @@ contract YEthStakerStrategy is BaseStrategy {
      * @return estimated total value in asset value
      */
     function estimateTotalAssets() public view returns (uint256) {
-        // idle yETH + staked yETH
-        uint256 yethInEth = yETH.balanceOf(address(this)) +
-            styETH.convertToAssets(styETH.balanceOf(address(this)));
-        if (yethInEth > 0) {
-            // get swap output, curve reverts for 0 values
-            yethInEth = curvepool.get_dy(yETH_INDEX, WETH_INDEX, yethInEth);
-        }
-        return yethInEth + asset.balanceOf(address(this));
+        // amount of yETH in strategy
+        uint256 yethAmount = styETH.maxWithdraw(address(this));
+        // estimate based on max withdraw size
+        uint256 swapAmountIn = maxSingleWithdraw;
+        uint256 swapAmountOut = curvepool.get_dy(YETH_INDEX, WETH_INDEX, swapAmountIn);
+        return yethAmount * swapAmountOut / swapAmountIn + asset.balanceOf(address(this));
     }
 
-    /// @notice Sets the peg value for WETH and yETH
-    /// @param _peg The peg value in BPS
-    function setPeg(uint256 _peg) external onlyManagement {
-        require(_peg <= MAX_BPS, "peg>MAX_BPS");
-        peg = _peg;
+    /// @notice Sets the maximum size of a single withdrawal
+    /// @param _max Maximum withdrawal size
+    function setMaxSingleWithdraw(uint256 _max) external onlyManagement {
+        require(_max >= WAD, "max<WAD");
+        maxSingleWithdraw = _max;
+    }
+
+    /// @notice Sets the slippage allowed on a swap during a withdrawal
+    /// @param _slippage Allowed slippage (bps)
+    function setSwapSlippage(uint256 _slippage) external onlyManagement {
+        require(_slippage <= WAD, "slippage>MAX");
+        swapSlippage = _slippage;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -276,7 +281,7 @@ contract YEthStakerStrategy is BaseStrategy {
     function availableWithdrawLimit(
         address _owner
     ) public view override returns (uint256) {
-        return estimateTotalAssets();
+        return asset.balanceOf(address(this)) + maxSingleWithdraw;
     }
 
     /**
