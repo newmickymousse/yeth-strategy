@@ -9,7 +9,7 @@ interface IYEthPool {
     function remove_liquidity(
         uint256 _lpAmount,
         uint256[] calldata _min_amounts
-    ) external returns (uint256);
+    ) external;
     function num_assets() external view returns (uint256);
     function assets(uint256 _index) external view returns (address);
 }

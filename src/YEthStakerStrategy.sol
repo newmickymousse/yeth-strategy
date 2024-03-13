@@ -302,13 +302,20 @@ contract YEthStakerStrategy is BaseStrategy {
      */
     function _emergencyWithdraw(uint256 _amount) internal override {
         // withdraw all styeth to yeth
-        styETH.withdraw(styETH.balanceOf(address(this)));
+        uint256 balance = styETH.balanceOf(address(this));
+        if (balance > 0) {
+            styETH.redeem(balance);
+        }
+        
         // withdraw yeth to all LSTs to minimize losses
-        uint256 num = yETHPool.num_assets();
-        yETHPool.remove_liquidity(
-            yETH.balanceOf(address(this)),
-            new uint256[](num)
-        );
+        balance = yETH.balanceOf(address(this));
+        if (balance > 0) {
+            uint256 num = yETHPool.num_assets();
+            yETHPool.remove_liquidity(
+                balance,
+                new uint256[](num)
+            );
+        }
         // LSTs should be sweeped and swapped to WETH
     }
 
