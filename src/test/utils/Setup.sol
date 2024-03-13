@@ -45,7 +45,9 @@ contract Setup is ExtendedTest, IEvents {
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;
 
-    address public constant yETHPool = 0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63;
+    address public constant yETHPool =
+        0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63;
+    address public constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52;
 
     function setUp() public virtual {
         _setTokenAddrs();
@@ -74,7 +76,11 @@ contract Setup is ExtendedTest, IEvents {
         // we save the strategy as a IStrategyInterface to give it the needed interface
         IStrategyInterface _strategy = IStrategyInterface(
             address(
-                new YEthStakerStrategy(address(asset), "Tokenized Strategy")
+                new YEthStakerStrategy(
+                    address(asset),
+                    "Tokenized Strategy",
+                    GOV
+                )
             )
         );
 

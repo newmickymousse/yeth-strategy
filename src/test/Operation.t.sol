@@ -18,6 +18,7 @@ contract OperationTest is Setup {
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
+        assertEq(strategy.GOV(), GOV);
         // TODO: add additional check on strat params
     }
 
@@ -31,7 +32,9 @@ contract OperationTest is Setup {
 
         IYEthStaker staker = IYEthStaker(strategy.styETH());
         uint256 sharesValue = staker.convertToAssets(1e18);
-        uint256 assetsValue = staker.convertToAssets(staker.balanceOf(address(strategy)));
+        uint256 assetsValue = staker.convertToAssets(
+            staker.balanceOf(address(strategy))
+        );
         uint256 strategyBalance = staker.balanceOf(address(strategy));
 
         // Earn Interest
@@ -44,12 +47,26 @@ contract OperationTest is Setup {
         skip(2 weeks);
 
         uint256 sharesValue2 = staker.convertToAssets(1e18);
-        assertGt(sharesValue2, sharesValue, "!yETH earned profit, shares value more");
+        assertGt(
+            sharesValue2,
+            sharesValue,
+            "!yETH earned profit, shares value more"
+        );
 
-        uint256 assetsValue2 = staker.convertToAssets(staker.balanceOf(address(strategy)));
-        assertGt(assetsValue2, assetsValue, "!yETH earned profit, assets value more");
+        uint256 assetsValue2 = staker.convertToAssets(
+            staker.balanceOf(address(strategy))
+        );
+        assertGt(
+            assetsValue2,
+            assetsValue,
+            "!yETH earned profit, assets value more"
+        );
 
-        assertEq(staker.balanceOf(address(strategy)), strategyBalance, "!strategy balance");
+        assertEq(
+            staker.balanceOf(address(strategy)),
+            strategyBalance,
+            "!strategy balance"
+        );
 
         // Report profit
         vm.prank(keeper);

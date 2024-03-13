@@ -41,18 +41,23 @@ contract YEthStakerStrategy is BaseStrategy {
     int128 internal constant yETH_INDEX = 1;
     uint256 internal constant MAX_BPS = 10000;
 
+    address immutable GOV;
+
     /// @notice Value in BPS how much are WETH and yETH pagged.
     /// 10000 is equal to 1:1
     uint256 public peg = 9900;
 
     constructor(
         address _asset,
-        string memory _name
+        string memory _name,
+        address _gov
     ) BaseStrategy(_asset, _name) {
         require(_asset == address(WETH), "Asset!=WETH");
         WETH.approve(address(curvepool), type(uint256).max);
         yETH.approve(address(curvepool), type(uint256).max);
         yETH.approve(address(styETH), type(uint256).max);
+        require(_gov != address(0), "GOV=0x0");
+        GOV = _gov;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -71,7 +76,7 @@ contract YEthStakerStrategy is BaseStrategy {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        uint256 minAmountOut = _amount * peg / MAX_BPS; // TODO: change this calculation
+        uint256 minAmountOut = (_amount * peg) / MAX_BPS; // TODO: change this calculation
         curvepool.exchange(WETH_INDEX, yETH_INDEX, _amount, minAmountOut); //TODO: determine correct min_dy
 
         // stakes any idle yeth not only the output from exchanging eth
@@ -107,12 +112,15 @@ contract YEthStakerStrategy is BaseStrategy {
         );
 
         styETH.withdraw(_amountInYETH);
-        uint256 yETHInput = Math.min(_amountInYETH, yETH.balanceOf(address(this)));
+        uint256 yETHInput = Math.min(
+            _amountInYETH,
+            yETH.balanceOf(address(this))
+        );
         curvepool.exchange(
             yETH_INDEX,
             WETH_INDEX,
             yETHInput,
-            yETHInput * peg / MAX_BPS
+            (yETHInput * peg) / MAX_BPS
         );
     }
 
@@ -292,18 +300,22 @@ contract YEthStakerStrategy is BaseStrategy {
      *
      * @param _amount The amount of asset to attempt to free.
      */
-    // function _emergencyWithdraw(uint256 _amount) internal override {
-    //     // withdraw styeth to yeth, let's assume weth:yeth is 1:1
-    //     styETH.withdraw(_amount);
-    //     // withdraw yeth to all LSTs to minimize losses
-    //     yETHPool.remove_liquidity(yETH.balanceOf(address(this)), []);
-    //     // LSTs should be converted to WETH later to minimize this call
-    // }
+    function _emergencyWithdraw(uint256 _amount) internal override {
+        // withdraw all styeth to yeth
+        styETH.withdraw(styETH.balanceOf(address(this)));
+        // withdraw yeth to all LSTs to minimize losses
+        uint256 num = yETHPool.num_assets();
+        yETHPool.remove_liquidity(
+            yETH.balanceOf(address(this)),
+            new uint256[](num)
+        );
+        // LSTs should be sweeped and swapped to WETH
+    }
 
-    // function swapLST(address lst, uint256 amount) external onlyManagement {
-    //     ERC20(lst).approve(address(curvepool), type(uint256).max);
-    //     uint256[] memory amounts = new uint256[](2);
-    //     amounts[1] = amount;
-    //     yETHPool.add_liquidity(amounts, 1);
-    // }
+    /// @notice Sweep token, only governance can call it
+    function sweep(address _token) external {
+        require(msg.sender == GOV, "!GOV");
+        require(_token != address(asset), "!asset");
+        ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
+    }
 }
