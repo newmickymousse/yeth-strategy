@@ -35,15 +35,11 @@ contract OperationTest is Setup {
         uint256 strategyBalance = staker.balanceOf(address(strategy));
 
         // Earn Interest
+        uint256 preBal = ERC20(strategy.yETH()).balanceOf(address(staker));
+        deal(strategy.yETH(), strategy.styETH(), preBal + 1000e18);
         address ape = address(69);
-        uint256 apeAmount = 1e18;
-        deal(tokenAddrs["wstETH"], ape, apeAmount);
-        deal(tokenAddrs["wstETH"], yETHPool, apeAmount);
         vm.startPrank(ape);
-        ERC20(tokenAddrs["wstETH"]).approve(yETHPool, apeAmount);
-        uint256[] memory amounts = new uint256[](8);
-        amounts[2] = apeAmount;
-        IYEthPool(yETHPool).add_liquidity(amounts, 1);
+        staker.update_amounts();
         vm.stopPrank();
         skip(2 weeks);
 
