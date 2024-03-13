@@ -3,9 +3,10 @@ pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
 import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IYEthPool} from "./interfaces/IYEthPool.sol";
 
 // Import interfaces for many popular DeFi projects, or add your own!
 //import "../interfaces/<protocol>/<Interface>.sol";
@@ -33,9 +34,16 @@ contract YEthStakerStrategy is BaseStrategy {
         ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
     IYEthStaker public constant styETH =
         IYEthStaker(0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4);
+    IYEthPool public constant yETHPool =
+        IYEthPool(0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63);
 
     int128 internal constant WETH_INDEX = 0;
     int128 internal constant yETH_INDEX = 1;
+    uint256 internal constant MAX_BPS = 10000;
+
+    /// @notice Value in BPS how much are WETH and yETH pagged.
+    /// 10000 is equal to 1:1
+    uint256 public peg = 9900;
 
     constructor(
         address _asset,
@@ -63,8 +71,8 @@ contract YEthStakerStrategy is BaseStrategy {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        // uint256 minAmountOut = _amount * 99 / 100; // TODO: change this calculation
-        curvepool.exchange(WETH_INDEX, yETH_INDEX, _amount, 0); //TODO: determine correct min_dy
+        uint256 minAmountOut = _amount * peg / MAX_BPS; // TODO: change this calculation
+        curvepool.exchange(WETH_INDEX, yETH_INDEX, _amount, minAmountOut); //TODO: determine correct min_dy
 
         // stakes any idle yeth not only the output from exchanging eth
         styETH.deposit(yETH.balanceOf(address(this)));
@@ -99,12 +107,13 @@ contract YEthStakerStrategy is BaseStrategy {
         );
 
         styETH.withdraw(_amountInYETH);
+        uint256 yETHInput = Math.min(_amountInYETH, yETH.balanceOf(address(this)));
         curvepool.exchange(
             yETH_INDEX,
             WETH_INDEX,
-            Math.min(_amountInYETH, yETH.balanceOf(address(this))),
-            0
-        ); //TODO: check for min output
+            yETHInput,
+            yETHInput * peg / MAX_BPS
+        );
     }
 
     /**
@@ -142,16 +151,16 @@ contract YEthStakerStrategy is BaseStrategy {
                 _deployFunds(balance);
             }
         }
-        _totalAssets = _balanceInAssetValue();
+        _totalAssets = estimateTotalAssets();
     }
 
     /**
-     * @dev Internal function to calculate the value of different assets
+     * @notice Internal function to calculate the value of different assets
      * in asset value.
      *
-     * @return total value in asset value
+     * @return estimated total value in asset value
      */
-    function _balanceInAssetValue() internal view returns (uint256) {
+    function estimateTotalAssets() public view returns (uint256) {
         // idle yETH + staked yETH
         uint256 yethInEth = yETH.balanceOf(address(this)) +
             styETH.convertToAssets(styETH.balanceOf(address(this)));
@@ -160,6 +169,13 @@ contract YEthStakerStrategy is BaseStrategy {
             yethInEth = curvepool.get_dy(yETH_INDEX, WETH_INDEX, yethInEth);
         }
         return yethInEth + asset.balanceOf(address(this));
+    }
+
+    /// @notice Sets the peg value for WETH and yETH
+    /// @param _peg The peg value in BPS
+    function setPeg(uint256 _peg) external onlyManagement {
+        require(_peg <= MAX_BPS, "peg>MAX_BPS");
+        peg = _peg;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -252,7 +268,7 @@ contract YEthStakerStrategy is BaseStrategy {
     function availableWithdrawLimit(
         address _owner
     ) public view override returns (uint256) {
-        return _balanceInAssetValue();
+        return estimateTotalAssets();
     }
 
     /**
@@ -275,14 +291,19 @@ contract YEthStakerStrategy is BaseStrategy {
      *    }
      *
      * @param _amount The amount of asset to attempt to free.
-     *
-    function _emergencyWithdraw(uint256 _amount) internal override {
-        TODO: If desired implement simple logic to free deployed funds.
+     */
+    // function _emergencyWithdraw(uint256 _amount) internal override {
+    //     // withdraw styeth to yeth, let's assume weth:yeth is 1:1
+    //     styETH.withdraw(_amount);
+    //     // withdraw yeth to all LSTs to minimize losses
+    //     yETHPool.remove_liquidity(yETH.balanceOf(address(this)), []);
+    //     // LSTs should be converted to WETH later to minimize this call
+    // }
 
-        EX:
-            _amount = min(_amount, aToken.balanceOf(address(this)));
-            _freeFunds(_amount);
-    }
-
-    */
+    // function swapLST(address lst, uint256 amount) external onlyManagement {
+    //     ERC20(lst).approve(address(curvepool), type(uint256).max);
+    //     uint256[] memory amounts = new uint256[](2);
+    //     amounts[1] = amount;
+    //     yETHPool.add_liquidity(amounts, 1);
+    // }
 }

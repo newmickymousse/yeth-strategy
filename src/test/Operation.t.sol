@@ -3,6 +3,8 @@ pragma solidity ^0.8.18;
 
 import "forge-std/console.sol";
 import {Setup, ERC20, IStrategyInterface} from "./utils/Setup.sol";
+import {IYEthPool} from "../interfaces/IYEthPool.sol";
+import {IYEthStaker} from "../interfaces/IYEthStaker.sol";
 
 contract OperationTest is Setup {
     function setUp() public virtual override {
@@ -27,8 +29,31 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
+        IYEthStaker staker = IYEthStaker(strategy.styETH());
+        uint256 sharesValue = staker.convertToAssets(1e18);
+        uint256 assetsValue = staker.convertToAssets(staker.balanceOf(address(strategy)));
+        uint256 strategyBalance = staker.balanceOf(address(strategy));
+
         // Earn Interest
-        skip(1 days);
+        address ape = address(69);
+        uint256 apeAmount = 1e18;
+        deal(tokenAddrs["wstETH"], ape, apeAmount);
+        deal(tokenAddrs["wstETH"], yETHPool, apeAmount);
+        vm.startPrank(ape);
+        ERC20(tokenAddrs["wstETH"]).approve(yETHPool, apeAmount);
+        uint256[] memory amounts = new uint256[](8);
+        amounts[2] = apeAmount;
+        IYEthPool(yETHPool).add_liquidity(amounts, 1);
+        vm.stopPrank();
+        skip(2 weeks);
+
+        uint256 sharesValue2 = staker.convertToAssets(1e18);
+        assertGt(sharesValue2, sharesValue, "!yETH earned profit, shares value more");
+
+        uint256 assetsValue2 = staker.convertToAssets(staker.balanceOf(address(strategy)));
+        assertGt(assetsValue2, assetsValue, "!yETH earned profit, assets value more");
+
+        assertEq(staker.balanceOf(address(strategy)), strategyBalance, "!strategy balance");
 
         // Report profit
         vm.prank(keeper);
@@ -45,6 +70,8 @@ contract OperationTest is Setup {
         // Withdraw all funds
         vm.prank(user);
         strategy.redeem(_amount, user, user);
+
+        assertEq(strategy.totalAssets(), 0, "!totalAssets=0");
 
         assertGe(
             asset.balanceOf(user),
