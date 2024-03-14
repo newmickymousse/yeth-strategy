@@ -8,6 +8,7 @@ import {YEthStakerStrategy, ERC20} from "../../YEthStakerStrategy.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 import {ICurvePool} from "../../interfaces/ICurvePool.sol";
 import {ICommonReportTrigger} from "../../interfaces/ICommonReportTrigger.sol";
+import {IYEthStaker} from "../../interfaces/IYEthStaker.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -174,6 +175,14 @@ contract Setup is ExtendedTest, IEvents {
         int128 to = setYethMoreValuable ? int128(1) : int128(0); // from yeth to wet
         yethPool.exchange(from, to, amount, 0);
         vm.stopPrank();
+    }
+
+    function earnInterest(uint256 _amount) public {
+        IYEthStaker staker = IYEthStaker(strategy.styETH());
+        uint256 preBal = ERC20(strategy.yETH()).balanceOf(address(staker));
+        deal(strategy.yETH(), strategy.styETH(), preBal + _amount);
+        staker.update_amounts();
+        skip(2 weeks);
     }
 
     function _setTokenAddrs() internal {

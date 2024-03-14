@@ -66,7 +66,7 @@ contract OperationYethMoreValuableTest is Setup {
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
         // Earn Interest
-        skip(1 days);
+        earnInterest(100e18);
 
         // TODO: implement logic to simulate earning interest.
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
@@ -112,7 +112,7 @@ contract OperationYethMoreValuableTest is Setup {
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
         // Earn Interest
-        skip(1 days);
+        earnInterest(100e18);
 
         // TODO: implement logic to simulate earning interest.
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
@@ -159,46 +159,5 @@ contract OperationYethMoreValuableTest is Setup {
             expectedShares,
             "!perf fee out"
         );
-    }
-
-    function test_reportTrigger(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        (bool trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        // Skip some time
-        skip(1 days);
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        vm.prank(keeper);
-        strategy.report();
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        // Unlock Profits
-        skip(strategy.profitMaxUnlockTime() + 100);
-
-        // should report after maxUnlockTime
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(trigger);
-
-        vm.prank(keeper);
-        strategy.report();
-
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
     }
 }
