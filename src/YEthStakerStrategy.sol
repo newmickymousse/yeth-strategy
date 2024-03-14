@@ -187,7 +187,7 @@ contract YEthStakerStrategy is BaseStrategy {
     /// @notice Sets the slippage allowed on a swap during a withdrawal
     /// @param _slippage Allowed slippage (bps)
     function setSwapSlippage(uint256 _slippage) external onlyManagement {
-        require(_slippage <= WAD, "slippage>MAX");
+        require(_slippage <= MAX_BPS, "slippage>MAX");
         swapSlippage = _slippage;
     }
 
