@@ -224,7 +224,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
             }
 
             // check if the deposit facility has enough capacity
-            if (depositFacility != address(0)) {
+            if (address(depositFacility) != address(0)) {
                 (uint256 deposit, ) = depositFacility.available();
                 if (deposit > WAD) {
                     // it is ok deposit even just WAD
