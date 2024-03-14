@@ -135,6 +135,25 @@ contract YEthStakerStrategy is BaseStrategy {
         uint256 stakedAmount = styETH.balanceOf(address(this)) * _amount / debt;
         // redeem for yETH
         uint256 swapAmount = styETH.redeem(stakedAmount);
+
+        // first try withdrawing from the facility
+        IDepositFacility facility = depositFacility;
+        if (address(facility) != address(0)) {
+            uint256 withdrawAmount;
+            (,withdrawAmount) = facility.available();
+            if (withdrawAmount > 0) {
+                if (withdrawAmount > swapAmount) {
+                    withdrawAmount = swapAmount;
+                }
+                swapAmount -= withdrawAmount;
+                facility.withdraw(withdrawAmount);
+                if (swapAmount == 0) {
+                    return;
+                }
+            }
+        }
+
+        // use curve for any remaining amount
         // calculate minimum out amount based on EMA oracle and a configurable slippage
         uint256 minAmountOut = swapAmount * (MAX_BPS - swapSlippage) / MAX_BPS * curvepool.ema_price() / WAD;
         curvepool.exchange(YETH_INDEX, WETH_INDEX, swapAmount, minAmountOut);
