@@ -163,7 +163,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
 
         // use curve for any remaining amount
         // calculate minimum out amount based on EMA oracle and a configurable slippage
-        uint256 minAmountOut = swapAmount * (MAX_BPS - swapSlippage) / MAX_BPS * curvepool.ema_price() / WAD;
+        uint256 minAmountOut = swapAmount * curvepool.ema_price() * (MAX_BPS - swapSlippage) / MAX_BPS / WAD;
         curvepool.exchange(YETH_INDEX, WETH_INDEX, swapAmount, minAmountOut);
     }
 

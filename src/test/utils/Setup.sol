@@ -6,6 +6,8 @@ import {ExtendedTest} from "./ExtendedTest.sol";
 
 import {YEthStakerStrategy, ERC20} from "../../YEthStakerStrategy.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
+import {ICurvePool} from "../../interfaces/ICurvePool.sol";
+import {ICommonReportTrigger} from "../../interfaces/ICommonReportTrigger.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -40,7 +42,7 @@ contract Setup is ExtendedTest, IEvents {
 
     // Fuzz from $0.01 of 1e6 stable coins up to 1 trillion of a 1e18 coin
     uint256 public maxFuzzAmount = 1e20;
-    uint256 public minFuzzAmount = 1e14;
+    uint256 public minFuzzAmount = 2e18; // min to deposit is WAD
 
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;
@@ -93,6 +95,10 @@ contract Setup is ExtendedTest, IEvents {
 
         vm.prank(management);
         _strategy.acceptManagement();
+
+        // all fee is acceptable
+        vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
+        ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF).setAcceptableBaseFee(1e18);
 
         return address(_strategy);
     }
@@ -156,8 +162,23 @@ contract Setup is ExtendedTest, IEvents {
         strategy.setPerformanceFee(_performanceFee);
     }
 
+    function setYethMoreValuavle(bool setYethMoreValuable) public {
+        address tokenToSwap = setYethMoreValuable ? tokenAddrs["WETH"] : tokenAddrs["yETH"];
+        address swapper = address(555);
+        uint256 amount = 500e18;
+        deal(tokenToSwap, swapper, amount);
+        vm.startPrank(swapper);
+        ERC20(tokenToSwap).approve(strategy.curvepool(), amount);
+        ICurvePool yethPool = ICurvePool(strategy.curvepool());
+        int128 from = setYethMoreValuable ? int128(0) : int128(1); // from wet to yeth
+        int128 to = setYethMoreValuable ? int128(1) : int128(0); // from yeth to wet
+        yethPool.exchange(from, to, amount, 0);
+        vm.stopPrank();
+    }
+
     function _setTokenAddrs() internal {
         tokenAddrs["WETH"] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
         tokenAddrs["wstETH"] = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
+        tokenAddrs["yETH"] = 0x1BED97CBC3c24A4fb5C069C6E311a967386131f7;
     }
 }

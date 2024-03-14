@@ -9,7 +9,7 @@ size  :; forge build --sizes
 inspect :; forge inspect ${contract} storage-layout --pretty
 
 FORK_URL := ${ETH_RPC_URL} 
-FORK_BLOCK_NUMBER := 19413535
+FORK_BLOCK_NUMBER := 19435506
 
 # local tests without fork
 test  :; forge test -vv --fork-url ${FORK_URL} --etherscan-api-key ${ETHERSCAN_API_KEY} --fork-block-number ${FORK_BLOCK_NUMBER}

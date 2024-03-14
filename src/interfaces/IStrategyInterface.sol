@@ -8,6 +8,10 @@ interface IStrategyInterface is IStrategy {
     function curvepool() external view returns (address);
     function yETH() external view returns (address);
     function styETH() external view returns (address);
-    function GOV() external view returns (address);
+    function swapSlippage() external view returns (uint256);
     function sweep(address _token) external;
+    function reportTrigger(address _strategy)
+        external
+        view
+        returns (bool, bytes memory);
 }
