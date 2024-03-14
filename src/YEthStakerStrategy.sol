@@ -7,6 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
 import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
 import {IYEthPool} from "./interfaces/IYEthPool.sol";
+import {IDepositFacility} from "./interfaces/IDepositFacility.sol";
 
 // Import interfaces for many popular DeFi projects, or add your own!
 //import "../interfaces/<protocol>/<Interface>.sol";
@@ -44,6 +45,7 @@ contract YEthStakerStrategy is BaseStrategy {
 
     address immutable GOV;
 
+    IDepositFacility public depositFacility;
     uint256 public maxSingleWithdraw = 100 * 1e18;
     uint256 public swapSlippage = 50;
 
@@ -82,14 +84,28 @@ contract YEthStakerStrategy is BaseStrategy {
         }
 
         uint256 amountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
-        if (amountOut < _amount) {
-            // only use curve pool if we can get at least 1:1
-            return;
+        if (amountOut > _amount) {
+            // use curve pool
+            amountOut = curvepool.exchange(WETH_INDEX, YETH_INDEX, _amount, _amount);
+            styETH.deposit(amountOut);
         }
-        curvepool.exchange(WETH_INDEX, YETH_INDEX, _amount, _amount);
-
-        // stakes any idle yeth not only the output from exchanging eth
-        styETH.deposit(yETH.balanceOf(address(this)));
+        else {
+            // use deposit facility if there is available capacity
+            IDepositFacility facility = depositFacility;
+            if (address(facility) == address(0)) {
+                return;
+            }
+            uint256 deposit;
+            (deposit,) = facility.available();
+            if (deposit < WAD) {
+                // dont deposit dust
+                return;
+            }
+            if (_amount < deposit) {
+                deposit = _amount;
+            }
+            facility.deposit(deposit, true);
+        }
     }
 
     /**
@@ -175,6 +191,25 @@ contract YEthStakerStrategy is BaseStrategy {
         uint256 swapAmountIn = maxSingleWithdraw;
         uint256 swapAmountOut = curvepool.get_dy(YETH_INDEX, WETH_INDEX, swapAmountIn);
         return yethAmount * swapAmountOut / swapAmountIn + asset.balanceOf(address(this));
+    }
+
+    /// @notice Sets the address of the deposit and withdrawal facility, allowing 1:1 exchange
+    /// @param _facility Address of new facility
+    function setDepositFacility(address _facility) external onlyManagement {
+        address previous = address(depositFacility);
+        depositFacility = IDepositFacility(_facility);
+
+        // revoke previous allowance
+        if (previous != address(0)) {
+            WETH.approve(previous, 0);
+            yETH.approve(previous, 0);
+        }
+
+        // set new allowance
+        if (_facility != address(0)) {
+            WETH.approve(_facility, type(uint256).max);
+            yETH.approve(_facility, type(uint256).max);
+        }
     }
 
     /// @notice Sets the maximum size of a single withdrawal
