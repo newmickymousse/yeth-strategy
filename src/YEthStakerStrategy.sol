@@ -53,6 +53,10 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     uint256 public maxSingleWithdraw = 100 * 1e18;
     uint256 public swapSlippage = 50;
 
+    event DepositFacilitySet(address facility);
+    event MaxSingleWithdrawSet(uint256 max);
+    event SwapSlippageSet(uint256 slippage);
+
     constructor(
         address _asset,
         string memory _name,
@@ -277,6 +281,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
             WETH.approve(_facility, type(uint256).max);
             yETH.approve(_facility, type(uint256).max);
         }
+        emit DepositFacilitySet(_facility);
     }
 
     /// @notice Sets the maximum size of a single withdrawal
@@ -284,6 +289,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     function setMaxSingleWithdraw(uint256 _max) external onlyManagement {
         require(_max >= WAD, "max<WAD");
         maxSingleWithdraw = _max;
+        emit MaxSingleWithdrawSet(_max);
     }
 
     /// @notice Sets the slippage allowed on a swap during a withdrawal
@@ -291,6 +297,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     function setSwapSlippage(uint256 _slippage) external onlyManagement {
         require(_slippage <= MAX_BPS, "slippage>MAX");
         swapSlippage = _slippage;
+        emit SwapSlippageSet(_slippage);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -383,6 +390,10 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     function availableWithdrawLimit(
         address _owner
     ) public view override returns (uint256) {
+        if (address(depositFacility) != address(0)) {
+            (, uint256 withdraw) = depositFacility.available();
+            return asset.balanceOf(address(this)) + maxSingleWithdraw + withdraw;
+        }
         return asset.balanceOf(address(this)) + maxSingleWithdraw;
     }
 
