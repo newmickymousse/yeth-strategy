@@ -2,12 +2,14 @@
 pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
+import {CustomStrategyTriggerBase} from "@periphery/ReportTrigger/CustomStrategyTriggerBase.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
 import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
 import {IYEthPool} from "./interfaces/IYEthPool.sol";
 import {IDepositFacility} from "./interfaces/IDepositFacility.sol";
+import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 
 // Import interfaces for many popular DeFi projects, or add your own!
 //import "../interfaces/<protocol>/<Interface>.sol";
@@ -25,7 +27,7 @@ import {IDepositFacility} from "./interfaces/IDepositFacility.sol";
 
 // NOTE: To implement permissioned functions you can use the onlyManagement, onlyEmergencyAuthorized and onlyKeepers modifiers
 
-contract YEthStakerStrategy is BaseStrategy {
+contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     using SafeERC20 for ERC20;
 
     ICurvePool public curvepool =
@@ -37,6 +39,8 @@ contract YEthStakerStrategy is BaseStrategy {
         IYEthStaker(0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4);
     IYEthPool public constant yETHPool =
         IYEthPool(0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63);
+    ICommonReportTrigger public constant COMMON_REPORT_TRIGGER =
+        ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF);
 
     int128 internal constant WETH_INDEX = 0;
     int128 internal constant YETH_INDEX = 1;
@@ -195,6 +199,50 @@ contract YEthStakerStrategy is BaseStrategy {
             }
         }
         _totalAssets = estimateTotalAssets();
+    }
+
+    /**
+     * @notice Returns wether or not report() should be called by a keeper.
+     * @dev Check if the strategy is not shutdown and if there is asset to deploy
+     * @return . Should return true if report() should be called by keeper or false if not.
+     */
+    function reportTrigger(address _strategy)
+        external
+        view
+        override
+        returns (bool, bytes memory)
+    {
+        if (TokenizedStrategy.isShutdown()) return (false, bytes("Shutdown"));
+
+        // don't trigger for dust
+        uint256 assetBalance = asset.balanceOf(address(this));
+        if (assetBalance > WAD) {
+            // check if the curve pool has enough liquidity
+            uint256 swapAmountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, assetBalance);
+            if (swapAmountOut > assetBalance) {
+                return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
+            }
+
+            // check if the deposit facility has enough capacity
+            if (depositFacility != address(0)) {
+                (uint256 deposit, ) = depositFacility.available();
+                if (deposit > WAD) {
+                    // it is ok deposit even just WAD
+                    return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
+                }
+            }
+        }
+
+        if (!COMMON_REPORT_TRIGGER.isCurrentBaseFeeAcceptable()) {
+            return (false, bytes("Base fee is too high"));
+        }
+
+        return (
+            // Return true is the full profit unlock time has passed since the last report.
+            block.timestamp - TokenizedStrategy.lastReport() >
+                TokenizedStrategy.profitMaxUnlockTime(),
+            abi.encodeWithSelector(strategy.report.selector)
+        );
     }
 
     /**
