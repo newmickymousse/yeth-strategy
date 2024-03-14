@@ -241,7 +241,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
             // Return true is the full profit unlock time has passed since the last report.
             block.timestamp - TokenizedStrategy.lastReport() >
                 TokenizedStrategy.profitMaxUnlockTime(),
-            abi.encodeWithSelector(strategy.report.selector)
+            abi.encodeWithSelector(TokenizedStrategy.report.selector)
         );
     }
 
