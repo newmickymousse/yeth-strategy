@@ -42,8 +42,8 @@ contract Setup is ExtendedTest, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz from $0.01 of 1e6 stable coins up to 1 trillion of a 1e18 coin
-    uint256 public maxFuzzAmount = 1e20;
-    uint256 public minFuzzAmount = 2e18; // min to deposit is WAD
+    uint256 public maxFuzzAmount = 99e18; // don't go over max single withdraw
+    uint256 public minFuzzAmount = 1.001e18; // min to deposit is WAD
 
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;

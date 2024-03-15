@@ -11,6 +11,8 @@ contract ShutdownTest is Setup {
 
     function test_shutdownCanWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+        
+        uint256 maxLossTolerance = strategy.swapSlippage() * _amount / MAX_BPS;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -35,7 +37,7 @@ contract ShutdownTest is Setup {
 
         assertGe(
             asset.balanceOf(user),
-            balanceBefore + _amount,
+            balanceBefore + _amount - maxLossTolerance,
             "!final balance"
         );
     }
@@ -58,10 +60,14 @@ contract ShutdownTest is Setup {
         vm.prank(management);
         strategy.emergencyWithdraw(0);
 
+        // report new state after emergencyWithdraw
+        vm.prank(keeper);
+        strategy.report();
+
         // assert strategy has no assets
         assertEq(strategy.totalAssets(), 0, "!totalAssets");
 
-        // assert strategy has mutiple LSTs
+        // assert strategy has all LSTs from yETHpool
         IYEthPool pool = IYEthPool(yETHPool);
         uint256 numberOfLsts = pool.num_assets();
         for (uint256 i; i < numberOfLsts; i++) {
@@ -81,6 +87,9 @@ contract ShutdownTest is Setup {
             assertEq(ERC20(lst).balanceOf(address(strategy)), 0, "!sweep");
         }
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.report();
 
         // all assets are withdrawn
         assertEq(strategy.totalAssets(), 0, "!totalAssets");

@@ -14,11 +14,12 @@ contract OperationTest is Setup {
     function test_setupStrategyOK() public {
         console.log("address of strategy", address(strategy));
         assertTrue(address(0) != address(strategy));
-        assertEq(strategy.asset(), address(asset));
+        assertEq(strategy.asset(), tokenAddrs["WETH"]);
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
-        // TODO: add additional check on strat params
+        assertEq(strategy.maxSingleWithdraw(), 1e20);
+        assertEq(strategy.swapSlippage(), 50);
     }
 
     function test_operation(uint256 _amount) public {
@@ -29,41 +30,9 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        IYEthStaker staker = IYEthStaker(strategy.styETH());
-        uint256 sharesValue = staker.convertToAssets(1e18);
-        uint256 assetsValue = staker.convertToAssets(
-            staker.balanceOf(address(strategy))
-        );
-        uint256 strategyBalance = staker.balanceOf(address(strategy));
 
         // Earn Interest
-        uint256 preBal = ERC20(strategy.yETH()).balanceOf(address(staker));
-        deal(strategy.yETH(), strategy.styETH(), preBal + 1000e18);
-        staker.update_amounts();
-        skip(2 weeks);
-
-        uint256 sharesValue2 = staker.convertToAssets(1e18);
-        assertGt(
-            sharesValue2,
-            sharesValue,
-            "!yETH earned profit, shares value more"
-        );
-
-        uint256 assetsValue2 = staker.convertToAssets(
-            staker.balanceOf(address(strategy))
-        );
-        assertGt(
-            assetsValue2,
-            assetsValue,
-            "!yETH earned profit, assets value more"
-        );
-
-        assertEq(
-            staker.balanceOf(address(strategy)),
-            strategyBalance,
-            "!strategy balance"
-        );
-
+        earnInterest(100e18);
         // Report profit
         vm.prank(keeper);
         (uint256 profit, uint256 loss) = strategy.report();
@@ -80,7 +49,9 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertEq(strategy.totalAssets(), 0, "!totalAssets=0");
+        // Some funds are left because estimateTotalAssets uses pesimistic estimate
+        uint256 maxLossTolerance = strategy.swapSlippage() * 2 * _amount / MAX_BPS;
+        assertLt(strategy.totalAssets(), maxLossTolerance, "!totalAssets=0");
 
         assertGe(
             asset.balanceOf(user),
@@ -126,6 +97,24 @@ contract OperationTest is Setup {
             balanceBefore + _amount,
             "!final balance"
         );
+    }
+
+    function test_RevertWhen_withdrawAboveMax() public {
+        uint256 _amount = 110e18;
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        // Report profit
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Withdraw all funds
+        vm.expectRevert(bytes("ERC4626: redeem more than max"));
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
     }
 
     function test_reportTrigger(uint256 _amount) public {

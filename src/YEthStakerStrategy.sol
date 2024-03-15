@@ -142,7 +142,9 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         // calculate equivalent share of st-yETH
         uint256 stakedAmount = styETH.balanceOf(address(this)) * _amount / debt;
         // redeem for yETH
-        uint256 swapAmount = styETH.redeem(stakedAmount);
+        if (stakedAmount > 0) {
+            _amount = styETH.redeem(stakedAmount);
+        }
 
         // first try withdrawing from the facility
         IDepositFacility facility = depositFacility;
@@ -150,12 +152,12 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
             uint256 withdrawAmount;
             (,withdrawAmount) = facility.available();
             if (withdrawAmount > 0) {
-                if (withdrawAmount > swapAmount) {
-                    withdrawAmount = swapAmount;
+                if (withdrawAmount > _amount) {
+                    withdrawAmount = _amount;
                 }
-                swapAmount -= withdrawAmount;
+                _amount -= withdrawAmount;
                 facility.withdraw(withdrawAmount);
-                if (swapAmount == 0) {
+                if (_amount == 0) {
                     return;
                 }
             }
@@ -163,8 +165,8 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
 
         // use curve for any remaining amount
         // calculate minimum out amount based on EMA oracle and a configurable slippage
-        uint256 minAmountOut = swapAmount * curvepool.ema_price() * (MAX_BPS - swapSlippage) / MAX_BPS / WAD;
-        curvepool.exchange(YETH_INDEX, WETH_INDEX, swapAmount, minAmountOut);
+        uint256 minAmountOut = _amount * curvepool.ema_price() * (MAX_BPS - swapSlippage) / MAX_BPS / WAD;
+        curvepool.exchange(YETH_INDEX, WETH_INDEX, _amount, minAmountOut);
     }
 
     /**
