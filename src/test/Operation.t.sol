@@ -2,7 +2,7 @@
 pragma solidity ^0.8.18;
 
 import "forge-std/console.sol";
-import {Setup, ERC20, IStrategyInterface} from "./utils/Setup.sol";
+import {Setup, ERC20, IStrategyInterface, ICommonReportTrigger} from "./utils/Setup.sol";
 import {IYEthPool} from "../interfaces/IYEthPool.sol";
 import {IYEthStaker} from "../interfaces/IYEthStaker.sol";
 
@@ -115,46 +115,5 @@ contract OperationTest is Setup {
         vm.expectRevert(bytes("ERC4626: redeem more than max"));
         vm.prank(user);
         strategy.redeem(_amount, user, user);
-    }
-
-    function test_reportTrigger(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        (bool trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        // Skip some time
-        skip(1 days);
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        vm.prank(keeper);
-        strategy.report();
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
-
-        // Unlock Profits
-        skip(strategy.profitMaxUnlockTime() + 100);
-
-        // should report after maxUnlockTime
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(trigger);
-
-        vm.prank(keeper);
-        strategy.report();
-
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-
-        (trigger, ) = strategy.reportTrigger(address(strategy));
-        assertTrue(!trigger);
     }
 }
