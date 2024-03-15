@@ -30,7 +30,6 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-
         // Earn Interest
         earnInterest(100e18);
         // Report profit
@@ -50,7 +49,8 @@ contract OperationTest is Setup {
         strategy.redeem(_amount, user, user);
 
         // Some funds are left because estimateTotalAssets uses pesimistic estimate
-        uint256 maxLossTolerance = strategy.swapSlippage() * 2 * _amount / MAX_BPS;
+        uint256 maxLossTolerance = (strategy.swapSlippage() * 2 * _amount) /
+            MAX_BPS;
         assertLt(strategy.totalAssets(), maxLossTolerance, "!totalAssets=0");
 
         assertGe(
@@ -59,7 +59,7 @@ contract OperationTest is Setup {
             "!final balance"
         );
     }
-    
+
     function test_deposit_skip_below_wad() public {
         uint256 _amount = 1e17;
 

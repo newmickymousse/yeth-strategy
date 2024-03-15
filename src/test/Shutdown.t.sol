@@ -11,8 +11,9 @@ contract ShutdownTest is Setup {
 
     function test_shutdownCanWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-        
-        uint256 maxLossTolerance = strategy.swapSlippage() * _amount / MAX_BPS;
+
+        uint256 maxLossTolerance = (strategy.swapSlippage() * _amount) /
+            MAX_BPS;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);

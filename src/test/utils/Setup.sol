@@ -99,7 +99,8 @@ contract Setup is ExtendedTest, IEvents {
 
         // all fee is acceptable
         vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
-        ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF).setAcceptableBaseFee(1e18);
+        ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF)
+            .setAcceptableBaseFee(1e18);
 
         return address(_strategy);
     }
@@ -164,7 +165,9 @@ contract Setup is ExtendedTest, IEvents {
     }
 
     function setYethMoreValuavle(bool setYethMoreValuable) public {
-        address tokenToSwap = setYethMoreValuable ? tokenAddrs["WETH"] : tokenAddrs["yETH"];
+        address tokenToSwap = setYethMoreValuable
+            ? tokenAddrs["WETH"]
+            : tokenAddrs["yETH"];
         address swapper = address(555);
         uint256 amount = 500e18;
         deal(tokenToSwap, swapper, amount);

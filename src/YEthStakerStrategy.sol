@@ -94,17 +94,21 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         uint256 amountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
         if (amountOut > _amount) {
             // use curve pool
-            amountOut = curvepool.exchange(WETH_INDEX, YETH_INDEX, _amount, _amount);
+            amountOut = curvepool.exchange(
+                WETH_INDEX,
+                YETH_INDEX,
+                _amount,
+                _amount
+            );
             styETH.deposit(amountOut);
-        }
-        else {
+        } else {
             // use deposit facility if there is available capacity
             IDepositFacility facility = depositFacility;
             if (address(facility) == address(0)) {
                 return;
             }
             uint256 deposit;
-            (deposit,) = facility.available();
+            (deposit, ) = facility.available();
             if (deposit < WAD) {
                 // dont deposit dust
                 return;
@@ -138,9 +142,11 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
-        uint256 debt = TokenizedStrategy.totalAssets() - asset.balanceOf(address(this));
+        uint256 debt = TokenizedStrategy.totalAssets() -
+            asset.balanceOf(address(this));
         // calculate equivalent share of st-yETH
-        uint256 stakedAmount = styETH.balanceOf(address(this)) * _amount / debt;
+        uint256 stakedAmount = (styETH.balanceOf(address(this)) * _amount) /
+            debt;
         // redeem for yETH
         if (stakedAmount > 0) {
             _amount = styETH.redeem(stakedAmount);
@@ -150,7 +156,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         IDepositFacility facility = depositFacility;
         if (address(facility) != address(0)) {
             uint256 withdrawAmount;
-            (,withdrawAmount) = facility.available();
+            (, withdrawAmount) = facility.available();
             if (withdrawAmount > 0) {
                 if (withdrawAmount > _amount) {
                     withdrawAmount = _amount;
@@ -165,7 +171,11 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
 
         // use curve for any remaining amount
         // calculate minimum out amount based on EMA oracle and a configurable slippage
-        uint256 minAmountOut = _amount * curvepool.ema_price() * (MAX_BPS - swapSlippage) / MAX_BPS / WAD;
+        uint256 minAmountOut = (_amount *
+            curvepool.ema_price() *
+            (MAX_BPS - swapSlippage)) /
+            MAX_BPS /
+            WAD;
         curvepool.exchange(YETH_INDEX, WETH_INDEX, _amount, minAmountOut);
     }
 
@@ -212,21 +222,25 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
      * @dev Check if the strategy is not shutdown and if there is asset to deploy
      * @return . Should return true if report() should be called by keeper or false if not.
      */
-    function reportTrigger(address _strategy)
-        external
-        view
-        override
-        returns (bool, bytes memory)
-    {
+    function reportTrigger(
+        address _strategy
+    ) external view override returns (bool, bytes memory) {
         if (TokenizedStrategy.isShutdown()) return (false, bytes("Shutdown"));
 
         // don't trigger for dust
         uint256 assetBalance = asset.balanceOf(address(this));
         if (assetBalance > WAD) {
             // check if the curve pool has enough liquidity
-            uint256 swapAmountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, assetBalance);
+            uint256 swapAmountOut = curvepool.get_dy(
+                WETH_INDEX,
+                YETH_INDEX,
+                assetBalance
+            );
             if (swapAmountOut > assetBalance) {
-                return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
+                return (
+                    true,
+                    abi.encodeWithSelector(TokenizedStrategy.report.selector)
+                );
             }
 
             // check if the deposit facility has enough capacity
@@ -234,7 +248,12 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
                 (uint256 deposit, ) = depositFacility.available();
                 if (deposit > WAD) {
                     // it is ok deposit even just WAD
-                    return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
+                    return (
+                        true,
+                        abi.encodeWithSelector(
+                            TokenizedStrategy.report.selector
+                        )
+                    );
                 }
             }
         }
@@ -262,8 +281,15 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         uint256 yethAmount = styETH.maxWithdraw(address(this));
         // estimate based on max withdraw size
         uint256 swapAmountIn = maxSingleWithdraw;
-        uint256 swapAmountOut = curvepool.get_dy(YETH_INDEX, WETH_INDEX, swapAmountIn);
-        return yethAmount * swapAmountOut / swapAmountIn + asset.balanceOf(address(this));
+        uint256 swapAmountOut = curvepool.get_dy(
+            YETH_INDEX,
+            WETH_INDEX,
+            swapAmountIn
+        );
+        return
+            (yethAmount * swapAmountOut) /
+            swapAmountIn +
+            asset.balanceOf(address(this));
     }
 
     /// @notice Sets the address of the deposit and withdrawal facility, allowing 1:1 exchange
@@ -394,7 +420,8 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     ) public view override returns (uint256) {
         if (address(depositFacility) != address(0)) {
             (, uint256 withdraw) = depositFacility.available();
-            return asset.balanceOf(address(this)) + maxSingleWithdraw + withdraw;
+            return
+                asset.balanceOf(address(this)) + maxSingleWithdraw + withdraw;
         }
         return asset.balanceOf(address(this)) + maxSingleWithdraw;
     }
@@ -426,15 +453,12 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         if (balance > 0) {
             styETH.redeem(balance);
         }
-        
+
         // withdraw yeth to all LSTs to minimize losses
         balance = yETH.balanceOf(address(this));
         if (balance > 0) {
             uint256 num = yETHPool.num_assets();
-            yETHPool.remove_liquidity(
-                balance,
-                new uint256[](num)
-            );
+            yETHPool.remove_liquidity(balance, new uint256[](num));
         }
         // LSTs should be sweeped and swapped to WETH
     }

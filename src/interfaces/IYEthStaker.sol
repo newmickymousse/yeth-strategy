@@ -3,7 +3,10 @@ pragma solidity 0.8.18;
 
 interface IYEthStaker {
     function deposit(uint256 _assets) external returns (uint256);
-    function deposit(uint256 _assets, address _receiver) external returns (uint256);
+    function deposit(
+        uint256 _assets,
+        address _receiver
+    ) external returns (uint256);
     function withdraw(uint256 _assets) external returns (uint256);
     function redeem(uint256 _shares) external returns (uint256);
     function balanceOf(address _user) external view returns (uint256);

@@ -11,8 +11,7 @@ interface IStrategyInterface is IStrategy {
     function swapSlippage() external view returns (uint256);
     function maxSingleWithdraw() external view returns (uint256);
     function sweep(address _token) external;
-    function reportTrigger(address _strategy)
-        external
-        view
-        returns (bool, bytes memory);
+    function reportTrigger(
+        address _strategy
+    ) external view returns (bool, bytes memory);
 }

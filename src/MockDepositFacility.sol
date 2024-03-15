@@ -19,7 +19,11 @@ contract MockDepositFacility is IDepositFacility {
         yETH.approve(address(styETH), type(uint256).max);
     }
 
-    function available() external view returns (uint256 _deposit, uint256 _withdraw) {
+    function available()
+        external
+        view
+        returns (uint256 _deposit, uint256 _withdraw)
+    {
         _deposit = yETH.balanceOf(address(this));
         _withdraw = WETH.balanceOf(address(this));
     }
@@ -28,8 +32,7 @@ contract MockDepositFacility is IDepositFacility {
         WETH.safeTransferFrom(msg.sender, address(this), _amount);
         if (_stake) {
             return styETH.deposit(_amount, msg.sender);
-        }
-        else {
+        } else {
             yETH.safeTransfer(msg.sender, _amount);
             return _amount;
         }

@@ -14,7 +14,8 @@ contract OperationWethMoreValuableTest is Setup {
     function test_deposit_weth_more(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
-        uint256 maxLossTolerance = strategy.swapSlippage() * _amount / MAX_BPS;
+        uint256 maxLossTolerance = (strategy.swapSlippage() * _amount) /
+            MAX_BPS;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -59,7 +60,8 @@ contract OperationWethMoreValuableTest is Setup {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
 
-        uint256 maxLossTolerance = strategy.swapSlippage() * _amount / MAX_BPS;
+        uint256 maxLossTolerance = (strategy.swapSlippage() * _amount) /
+            MAX_BPS;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -102,8 +104,9 @@ contract OperationWethMoreValuableTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
-        
-        uint256 maxLossTolerance = strategy.swapSlippage() * _amount / MAX_BPS;
+
+        uint256 maxLossTolerance = (strategy.swapSlippage() * _amount) /
+            MAX_BPS;
 
         // Set protocol fee to 0 and perf fee to 10%
         setFees(0, 1_000);
