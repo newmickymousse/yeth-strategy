@@ -14,4 +14,5 @@ interface IStrategyInterface is IStrategy {
     function reportTrigger(
         address _strategy
     ) external view returns (bool, bytes memory);
+    function setDepositFacility(address _depositFacility) external;
 }

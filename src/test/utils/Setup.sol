@@ -9,6 +9,7 @@ import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 import {ICurvePool} from "../../interfaces/ICurvePool.sol";
 import {ICommonReportTrigger} from "../../interfaces/ICommonReportTrigger.sol";
 import {IYEthStaker} from "../../interfaces/IYEthStaker.sol";
+import {MockDepositFacility} from "../MockDepositFacility.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -52,6 +53,10 @@ contract Setup is ExtendedTest, IEvents {
         0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63;
     address public constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52;
 
+    uint256 public constant WAD = 1e18;
+
+    MockDepositFacility public depositFacility;
+
     function setUp() public virtual {
         _setTokenAddrs();
 
@@ -73,6 +78,9 @@ contract Setup is ExtendedTest, IEvents {
         vm.label(management, "management");
         vm.label(address(strategy), "strategy");
         vm.label(performanceFeeRecipient, "performanceFeeRecipient");
+
+        depositFacility = new MockDepositFacility();
+        vm.label(address(depositFacility), "depositFacility");
     }
 
     function setUpStrategy() public returns (address) {
