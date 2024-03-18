@@ -27,9 +27,9 @@ import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     using SafeERC20 for ERC20;
 
-    ICurvePool public curvepool =
+    ICurvePool public constant curvepool =
         ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22); // 0 is WETH, 1 is yETH
-    ERC20 public WETH = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    ERC20 public constant WETH = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     ERC20 public constant yETH =
         ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
     IYEthStaker public constant styETH =
