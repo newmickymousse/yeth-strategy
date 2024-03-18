@@ -29,7 +29,8 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
 
     ICurvePool public constant curvepool =
         ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22); // 0 is WETH, 1 is yETH
-    ERC20 public constant WETH = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    ERC20 public constant WETH =
+        ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     ERC20 public constant yETH =
         ERC20(0x1BED97CBC3c24A4fb5C069C6E311a967386131f7);
     IYEthStaker public constant styETH =
@@ -160,6 +161,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
                 }
                 _amount -= withdrawAmount;
                 facility.withdraw(withdrawAmount);
+                //slither-disable-next-line incorrect-equality
                 if (_amount == 0) {
                     return;
                 }
