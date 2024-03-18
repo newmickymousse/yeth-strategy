@@ -98,4 +98,18 @@ contract ShutdownTest is Setup {
         // user still has strategy shares
         assertGt(strategy.balanceOf(user), 0, "!balanceOf");
     }
+
+    function test_RevertWhen_sweepNotGov() public {
+        // Withdraw all funds
+        vm.expectRevert(bytes("!GOV"));
+        vm.prank(user);
+        strategy.sweep(tokenAddrs["wstETH"]);
+    }
+
+    function test_RevertWhen_sweepAsset() public {
+        // Withdraw all funds
+        vm.expectRevert(bytes("!asset"));
+        vm.prank(GOV);
+        strategy.sweep(address(asset));
+    }
 }

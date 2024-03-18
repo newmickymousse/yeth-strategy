@@ -11,9 +11,6 @@ import {IYEthPool} from "./interfaces/IYEthPool.sol";
 import {IDepositFacility} from "./interfaces/IDepositFacility.sol";
 import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 
-// Import interfaces for many popular DeFi projects, or add your own!
-//import "../interfaces/<protocol>/<Interface>.sol";
-
 /**
  * The `TokenizedStrategy` variable can be used to retrieve the strategies
  * specific storage data your contract.
@@ -206,8 +203,6 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         override
         returns (uint256 _totalAssets)
     {
-        // TODO: Implement harvesting logic and accurate accounting EX:
-        //
         if (!TokenizedStrategy.isShutdown()) {
             uint256 balance = asset.balanceOf(address(this));
             if (balance > 0) {
@@ -331,71 +326,6 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
     /*//////////////////////////////////////////////////////////////
                     OPTIONAL TO OVERRIDE BY STRATEGIST
     //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev Optional function for strategist to override that can
-     *  be called in between reports.
-     *
-     * If '_tend' is used tendTrigger() will also need to be overridden.
-     *
-     * This call can only be called by a permissioned role so may be
-     * through protected relays.
-     *
-     * This can be used to harvest and compound rewards, deposit idle funds,
-     * perform needed position maintenance or anything else that doesn't need
-     * a full report for.
-     *
-     *   EX: A strategy that can not deposit funds without getting
-     *       sandwiched can use the tend when a certain threshold
-     *       of idle to totalAssets has been reached.
-     *
-     * This will have no effect on PPS of the strategy till report() is called.
-     *
-     * @param _totalIdle The current amount of idle funds that are available to deploy.
-     *
-    function _tend(uint256 _totalIdle) internal override {}
-    */
-
-    /**
-     * @dev Optional trigger to override if tend() will be used by the strategy.
-     * This must be implemented if the strategy hopes to invoke _tend().
-     *
-     * @return . Should return true if tend() should be called by keeper or false if not.
-     *
-    function _tendTrigger() internal view override returns (bool) {}
-    */
-
-    /**
-     * @notice Gets the max amount of `asset` that an address can deposit.
-     * @dev Defaults to an unlimited amount for any address. But can
-     * be overridden by strategists.
-     *
-     * This function will be called before any deposit or mints to enforce
-     * any limits desired by the strategist. This can be used for either a
-     * traditional deposit limit or for implementing a whitelist etc.
-     *
-     *   EX:
-     *      if(isAllowed[_owner]) return super.availableDepositLimit(_owner);
-     *
-     * This does not need to take into account any conversion rates
-     * from shares to assets. But should know that any non max uint256
-     * amounts may be converted to shares. So it is recommended to keep
-     * custom amounts low enough as not to cause overflow when multiplied
-     * by `totalSupply`.
-     *
-     * @param . The address that is depositing into the strategy.
-     * @return . The available amount the `_owner` can deposit in terms of `asset`
-     *
-    function availableDepositLimit(
-        address _owner
-    ) public view override returns (uint256) {
-        TODO: If desired Implement deposit limit logic and any needed state variables .
-        
-        EX:    
-            uint256 totalAssets = TokenizedStrategy.totalAssets();
-            return totalAssets >= depositLimit ? 0 : depositLimit - totalAssets;
-    }
-    */
 
     /**
      * @notice Gets the max amount of `asset` that can be withdrawn.
