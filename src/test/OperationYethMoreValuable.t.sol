@@ -9,7 +9,7 @@ import {IYEthStaker} from "../interfaces/IYEthStaker.sol";
 contract OperationYethMoreValuableTest is Setup {
     function setUp() public virtual override {
         super.setUp();
-        setYethMoreValuavle(true);
+        setYethMoreValuable(true);
     }
 
     // test should skip deposit because it is not profitable to swap WETH to yETH

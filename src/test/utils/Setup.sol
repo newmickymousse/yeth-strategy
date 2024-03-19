@@ -172,7 +172,7 @@ contract Setup is ExtendedTest, IEvents {
         strategy.setPerformanceFee(_performanceFee);
     }
 
-    function setYethMoreValuavle(bool setYethMoreValuable) public {
+    function setYethMoreValuable(bool setYethMoreValuable) public {
         address tokenToSwap = setYethMoreValuable
             ? tokenAddrs["WETH"]
             : tokenAddrs["yETH"];
@@ -182,8 +182,8 @@ contract Setup is ExtendedTest, IEvents {
         vm.startPrank(swapper);
         ERC20(tokenToSwap).approve(strategy.curvepool(), amount);
         ICurvePool yethPool = ICurvePool(strategy.curvepool());
-        int128 from = setYethMoreValuable ? int128(0) : int128(1); // from wet to yeth
-        int128 to = setYethMoreValuable ? int128(1) : int128(0); // from yeth to wet
+        int128 from = setYethMoreValuable ? int128(0) : int128(1); // from weth to yeth
+        int128 to = setYethMoreValuable ? int128(1) : int128(0); // from yeth to weth
         yethPool.exchange(from, to, amount, 0);
         vm.stopPrank();
     }

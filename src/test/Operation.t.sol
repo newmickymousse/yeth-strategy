@@ -48,7 +48,7 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        // Some funds are left because estimateTotalAssets uses pesimistic estimate
+        // Some funds are left because estimatedTotalAssest uses pesimistic estimate
         uint256 maxLossTolerance = (strategy.swapSlippage() * 2 * _amount) /
             MAX_BPS;
         assertLt(strategy.totalAssets(), maxLossTolerance, "!totalAssets=0");
@@ -100,7 +100,7 @@ contract OperationTest is Setup {
     }
 
     function test_RevertWhen_withdrawAboveMax() public {
-        uint256 _amount = 110e18;
+        uint256 _amount = 50e18;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -109,7 +109,12 @@ contract OperationTest is Setup {
 
         // Report profit
         vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
+        strategy.report();
+
+        assertEq(asset.balanceOf(address(strategy)), 0, "!deposit");
+
+        vm.prank(management);
+        strategy.setMaxSingleWithdraw(1e18);
 
         // Withdraw all funds
         vm.expectRevert(bytes("ERC4626: redeem more than max"));

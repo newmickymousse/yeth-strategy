@@ -15,4 +15,5 @@ interface IStrategyInterface is IStrategy {
         address _strategy
     ) external view returns (bool, bytes memory);
     function setDepositFacility(address _depositFacility) external;
+    function setMaxSingleWithdraw(uint256 _maxSingleWithdraw) external;
 }

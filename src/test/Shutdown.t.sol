@@ -46,6 +46,12 @@ contract ShutdownTest is Setup {
     function test_emergencyWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
+        // Airdrop yETH to deposit facility
+        deal(address(strategy.yETH()), address(depositFacility), _amount);
+
+        vm.prank(management);
+        strategy.setDepositFacility(address(depositFacility));
+
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 

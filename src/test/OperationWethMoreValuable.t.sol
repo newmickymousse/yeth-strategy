@@ -8,7 +8,7 @@ import {IYEthPool} from "../interfaces/IYEthPool.sol";
 contract OperationWethMoreValuableTest is Setup {
     function setUp() public virtual override {
         super.setUp();
-        // setYethMoreValuavle(false);
+        // setYethMoreValuable(false);
     }
 
     function test_deposit_weth_more(uint256 _amount) public {
@@ -230,21 +230,6 @@ contract OperationWethMoreValuableTest is Setup {
             0,
             "!yETH balance"
         );
-
-        // Airdrop yETH to deposit facility
-        deal(
-            address(strategy.yETH()),
-            address(depositFacility),
-            (_amount * _depositFacilityFactor) / 5
-        );
-        deal(
-            address(strategy.asset()),
-            address(depositFacility),
-            (_amount * _depositFacilityFactor) / 5
-        );
-
-        vm.prank(management);
-        strategy.setDepositFacility(address(depositFacility));
 
         // shares are worth less because of esstimateTotalAssets uses pesimistic estimate
         assertGe(

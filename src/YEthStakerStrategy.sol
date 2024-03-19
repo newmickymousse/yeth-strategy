@@ -211,7 +211,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
                 _deployFunds(balance);
             }
         }
-        _totalAssets = estimateTotalAssets();
+        _totalAssets = estimatedTotalAssest();
     }
 
     /**
@@ -273,7 +273,7 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
      *
      * @return estimated total value in asset value
      */
-    function estimateTotalAssets() public view returns (uint256) {
+    function estimatedTotalAssest() public view returns (uint256) {
         // amount of yETH in strategy
         uint256 yethAmount = styETH.maxWithdraw(address(this));
         // estimate based on max withdraw size

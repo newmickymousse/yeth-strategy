@@ -11,24 +11,6 @@ contract ReportsTest is Setup {
         super.setUp();
     }
 
-    function test_RevertWhen_withdrawAboveMax() public {
-        uint256 _amount = 110e18;
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        // Report profit
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Withdraw all funds
-        vm.expectRevert(bytes("ERC4626: redeem more than max"));
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-    }
-
     function test_reportTrigger(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
