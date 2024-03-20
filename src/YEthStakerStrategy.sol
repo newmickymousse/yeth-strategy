@@ -3,6 +3,7 @@ pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
 import {CustomStrategyTriggerBase} from "@periphery/ReportTrigger/CustomStrategyTriggerBase.sol";
+import {TradeFactorySwapper} from "@periphery/swappers/TradeFactorySwapper.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
@@ -24,7 +25,11 @@ import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 
 // NOTE: To implement permissioned functions you can use the onlyManagement, onlyEmergencyAuthorized and onlyKeepers modifiers
 
-contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
+contract YEthStakerStrategy is
+    BaseStrategy,
+    CustomStrategyTriggerBase,
+    TradeFactorySwapper
+{
     using SafeERC20 for ERC20;
 
     ICurvePool public constant curvepool =
@@ -325,6 +330,11 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         emit SwapSlippageSet(_slippage);
     }
 
+    function rebalanceDepositFacility(uint256 _amount) external onlyManagement {
+        require(address(depositFacility) != address(0), "!facility");
+        styETH.withdraw(_amount);
+    }
+
     /*//////////////////////////////////////////////////////////////
                     OPTIONAL TO OVERRIDE BY STRATEGIST
     //////////////////////////////////////////////////////////////*/
@@ -400,5 +410,52 @@ contract YEthStakerStrategy is BaseStrategy, CustomStrategyTriggerBase {
         require(msg.sender == GOV, "!GOV");
         require(_token != address(asset), "!asset");
         ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
+    }
+
+    /**
+     * @notice Set the trade factory contract address.
+     * @dev For disabling set address(0).
+     * @param _tradeFactory The address of the trade factory contract.
+     */
+    function setTradeFactory(address _tradeFactory) external {
+        require(msg.sender == GOV, "!GOV");
+        _setTradeFactory(_tradeFactory, address(asset));
+    }
+
+    /**
+     * @notice Add a reward token for swapping using TradeFactorySwapper.
+     * @dev Only management can call it.
+     * @param _from The address of the token to swap from. Reward token.
+     * @param _to The address of the token to swap to. Asset token, yETH or st_yETH.
+     */
+    function addRewardTokenForSwapping(
+        address _from,
+        address _to
+    ) external onlyManagement {
+        require(
+            _to == address(asset) ||
+                _to == address(yETH) ||
+                _to == address(styETH),
+            "!_to token"
+        );
+        _addToken(_from, _to);
+    }
+
+    /**
+     * @notice Remove a reward token for swapping using TradeFactorySwapper.
+     * @dev Only management can call it.
+     * @param _from The address of the token to swap from. Reward token.
+     * @param _to The address of the token to swap to. Asset token, yETH or st_yETH.
+     */
+    function removeRewardTokenForSwapping(
+        address _from,
+        address _to
+    ) external onlyManagement {
+        _removeToken(_from, _to);
+    }
+
+    /// must override function from TradeFactorySwapper
+    function _claimRewards() internal override {
+        // There are no rewards to claim
     }
 }
