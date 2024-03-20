@@ -433,10 +433,16 @@ contract YEthStakerStrategy is
         address _to
     ) external onlyManagement {
         require(
+            _from != address(asset) &&
+                _from != address(yETH) &&
+                _from != address(styETH),
+            "!from token"
+        );
+        require(
             _to == address(asset) ||
                 _to == address(yETH) ||
                 _to == address(styETH),
-            "!_to token"
+            "!to token"
         );
         _addToken(_from, _to);
     }

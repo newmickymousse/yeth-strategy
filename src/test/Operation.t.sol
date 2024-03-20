@@ -122,16 +122,34 @@ contract OperationTest is Setup {
         strategy.redeem(_amount, user, user);
     }
 
-    function test_RevertWhen_addingRewardToken() public {
+    function test_RevertWhen_addingRewardTokenFromInvalid() public {
         address tradeFactory = address(
             0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
         );
         vm.prank(GOV);
         strategy.setTradeFactory(tradeFactory);
 
-        vm.expectRevert(bytes("!_to token"));
+        vm.expectRevert(bytes("!from token"));
         vm.prank(management);
-        strategy.addRewardTokenForSwapping(tokenAddrs["stWETH"], address(11));
+        strategy.addRewardTokenForSwapping(
+            tokenAddrs["WETH"],
+            tokenAddrs["wstETH"]
+        );
+    }
+
+    function test_RevertWhen_addingRewardTokenToInvalid() public {
+        address tradeFactory = address(
+            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
+        );
+        vm.prank(GOV);
+        strategy.setTradeFactory(tradeFactory);
+
+        vm.expectRevert(bytes("!to token"));
+        vm.prank(management);
+        strategy.addRewardTokenForSwapping(
+            tokenAddrs["YFI"],
+            tokenAddrs["wstETH"]
+        );
     }
 
     function test_addRemoveRewardToken() public {
