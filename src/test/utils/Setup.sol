@@ -4,8 +4,12 @@ pragma solidity 0.8.18;
 import "forge-std/console.sol";
 import {ExtendedTest} from "./ExtendedTest.sol";
 
-import {Strategy, ERC20} from "../../Strategy.sol";
+import {YEthStakerStrategy, ERC20} from "../../YEthStakerStrategy.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
+import {ICurvePool} from "../../interfaces/ICurvePool.sol";
+import {ICommonReportTrigger} from "../../interfaces/ICommonReportTrigger.sol";
+import {IYEthStaker} from "../../interfaces/IYEthStaker.sol";
+import {MockDepositFacility} from "../MockDepositFacility.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -39,17 +43,25 @@ contract Setup is ExtendedTest, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz from $0.01 of 1e6 stable coins up to 1 trillion of a 1e18 coin
-    uint256 public maxFuzzAmount = 1e30;
-    uint256 public minFuzzAmount = 10_000;
+    uint256 public maxFuzzAmount = 99e18; // don't go over max single withdraw
+    uint256 public minFuzzAmount = 1.001e18; // min to deposit is WAD
 
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;
+
+    address public constant yETHPool =
+        0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63;
+    address public constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52;
+
+    uint256 public constant WAD = 1e18;
+
+    MockDepositFacility public depositFacility;
 
     function setUp() public virtual {
         _setTokenAddrs();
 
         // Set asset
-        asset = ERC20(tokenAddrs["DAI"]);
+        asset = ERC20(tokenAddrs["WETH"]);
 
         // Set decimals
         decimals = asset.decimals();
@@ -66,12 +78,21 @@ contract Setup is ExtendedTest, IEvents {
         vm.label(management, "management");
         vm.label(address(strategy), "strategy");
         vm.label(performanceFeeRecipient, "performanceFeeRecipient");
+
+        depositFacility = new MockDepositFacility();
+        vm.label(address(depositFacility), "depositFacility");
     }
 
     function setUpStrategy() public returns (address) {
         // we save the strategy as a IStrategyInterface to give it the needed interface
         IStrategyInterface _strategy = IStrategyInterface(
-            address(new Strategy(address(asset), "Tokenized Strategy"))
+            address(
+                new YEthStakerStrategy(
+                    address(asset),
+                    "Tokenized Strategy",
+                    GOV
+                )
+            )
         );
 
         // set keeper
@@ -83,6 +104,11 @@ contract Setup is ExtendedTest, IEvents {
 
         vm.prank(management);
         _strategy.acceptManagement();
+
+        // all fee is acceptable
+        vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
+        ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF)
+            .setAcceptableBaseFee(1e18);
 
         return address(_strategy);
     }
@@ -146,13 +172,33 @@ contract Setup is ExtendedTest, IEvents {
         strategy.setPerformanceFee(_performanceFee);
     }
 
+    function setYethMoreValuable(bool setYethMoreValuable) public {
+        address tokenToSwap = setYethMoreValuable
+            ? tokenAddrs["WETH"]
+            : tokenAddrs["yETH"];
+        address swapper = address(555);
+        uint256 amount = 500e18;
+        deal(tokenToSwap, swapper, amount);
+        vm.startPrank(swapper);
+        ERC20(tokenToSwap).approve(strategy.curvepool(), amount);
+        ICurvePool yethPool = ICurvePool(strategy.curvepool());
+        int128 from = setYethMoreValuable ? int128(0) : int128(1); // from weth to yeth
+        int128 to = setYethMoreValuable ? int128(1) : int128(0); // from yeth to weth
+        yethPool.exchange(from, to, amount, 0);
+        vm.stopPrank();
+    }
+
+    function earnInterest(uint256 _amount) public {
+        IYEthStaker staker = IYEthStaker(strategy.styETH());
+        uint256 preBal = ERC20(strategy.yETH()).balanceOf(address(staker));
+        deal(strategy.yETH(), strategy.styETH(), preBal + _amount);
+        staker.update_amounts();
+        skip(2 weeks);
+    }
+
     function _setTokenAddrs() internal {
-        tokenAddrs["WBTC"] = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
-        tokenAddrs["YFI"] = 0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e;
         tokenAddrs["WETH"] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-        tokenAddrs["LINK"] = 0x514910771AF9Ca656af840dff83E8264EcF986CA;
-        tokenAddrs["USDT"] = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
-        tokenAddrs["DAI"] = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-        tokenAddrs["USDC"] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+        tokenAddrs["wstETH"] = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
+        tokenAddrs["yETH"] = 0x1BED97CBC3c24A4fb5C069C6E311a967386131f7;
     }
 }
