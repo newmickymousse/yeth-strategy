@@ -16,4 +16,8 @@ interface IStrategyInterface is IStrategy {
     ) external view returns (bool, bytes memory);
     function setDepositFacility(address _depositFacility) external;
     function setMaxSingleWithdraw(uint256 _maxSingleWithdraw) external;
+    function addRewardTokenForSwapping(address _from, address _to) external;
+    function removeRewardTokenForSwapping(address _from, address _to) external;
+    function rewardTokens() external view returns (address[] memory);
+    function setTradeFactory(address _tradeFactory) external;
 }

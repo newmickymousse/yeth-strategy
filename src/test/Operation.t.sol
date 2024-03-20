@@ -121,4 +121,55 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
     }
+
+    function test_RevertWhen_addingRewardTokenFromInvalid() public {
+        address tradeFactory = address(
+            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
+        );
+        vm.prank(GOV);
+        strategy.setTradeFactory(tradeFactory);
+
+        vm.expectRevert(bytes("!from token"));
+        vm.prank(management);
+        strategy.addRewardTokenForSwapping(
+            tokenAddrs["WETH"],
+            tokenAddrs["wstETH"]
+        );
+    }
+
+    function test_RevertWhen_addingRewardTokenToInvalid() public {
+        address tradeFactory = address(
+            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
+        );
+        vm.prank(GOV);
+        strategy.setTradeFactory(tradeFactory);
+
+        vm.expectRevert(bytes("!to token"));
+        vm.prank(management);
+        strategy.addRewardTokenForSwapping(
+            tokenAddrs["YFI"],
+            tokenAddrs["wstETH"]
+        );
+    }
+
+    function test_addRemoveRewardToken() public {
+        address from = tokenAddrs["wstETH"];
+        address to = tokenAddrs["WETH"];
+
+        address tradeFactory = address(
+            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
+        );
+        vm.prank(GOV);
+        strategy.setTradeFactory(tradeFactory);
+
+        vm.prank(management);
+        strategy.addRewardTokenForSwapping(from, to);
+        address[] memory rewardTokens = strategy.rewardTokens();
+        assertEq(rewardTokens.length, 1, "!rewardTokens");
+        assertEq(rewardTokens[0], from, "!rewardTokens");
+
+        vm.prank(management);
+        strategy.removeRewardTokenForSwapping(from, to);
+        assertEq(strategy.rewardTokens().length, 0, "!rewardTokens");
+    }
 }
