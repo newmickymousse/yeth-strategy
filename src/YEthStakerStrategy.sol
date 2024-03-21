@@ -5,7 +5,6 @@ import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
 import {CustomStrategyTriggerBase} from "@periphery/ReportTrigger/CustomStrategyTriggerBase.sol";
 import {TradeFactorySwapper} from "@periphery/swappers/TradeFactorySwapper.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
 import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
 import {IYEthPool} from "./interfaces/IYEthPool.sol";
@@ -26,7 +25,7 @@ import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 // NOTE: To implement permissioned functions you can use the onlyManagement, onlyEmergencyAuthorized and onlyKeepers modifiers
 
 contract YEthStakerStrategy is
-    BaseStrategy,
+    BaseStrategy, //review: use BaseHealthCheck
     CustomStrategyTriggerBase,
     TradeFactorySwapper
 {
@@ -45,7 +44,7 @@ contract YEthStakerStrategy is
     ICommonReportTrigger public constant COMMON_REPORT_TRIGGER =
         ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF);
 
-    int128 internal constant WETH_INDEX = 0;
+    int128 internal constant WETH_INDEX; // review: 0 is default
     int128 internal constant YETH_INDEX = 1;
     uint256 internal constant MAX_BPS = 10000;
     uint256 internal constant WAD = 1e18;
@@ -65,12 +64,14 @@ contract YEthStakerStrategy is
         string memory _name,
         address _gov
     ) BaseStrategy(_asset, _name) {
+        // review: require always at the top to avoid wasting gas if you screw it up :)
         require(_asset == address(WETH), "Asset!=WETH");
+        require(_gov != address(0), "GOV=0x0");
+
+        GOV = _gov;
         WETH.approve(address(curvepool), type(uint256).max);
         yETH.approve(address(curvepool), type(uint256).max);
         yETH.approve(address(styETH), type(uint256).max);
-        require(_gov != address(0), "GOV=0x0");
-        GOV = _gov;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -91,10 +92,17 @@ contract YEthStakerStrategy is
     function _deployFunds(uint256 _amount) internal override {
         if (_amount < WAD) {
             // no need to swap dust
+            // review: 1 eth is dust? that's a lot.
             return;
         }
 
+        // review: This is sandwitcheable and deployFunds can be forced
+        // Not sure if this is better than just flagging where to go through
         uint256 amountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
+
+        // review: here you are comparing amountOut (yETH) vs _amount (weth)
+        // I would add a comment saying:
+        // we are assuming weth==yeth, if we get more than 1:1, we should go through curve.
         if (amountOut > _amount) {
             // use curve pool
             amountOut = curvepool.exchange(
@@ -106,12 +114,18 @@ contract YEthStakerStrategy is
             styETH.deposit(amountOut);
         } else {
             // use deposit facility if there is available capacity
+            // review: why creating a new var?
             IDepositFacility facility = depositFacility;
+
+            // review I would require() facility to be set
+            // and I would set it up in the constructor.
             if (address(facility) == address(0)) {
                 return;
             }
             uint256 deposit;
             (deposit, ) = facility.available();
+
+            // review: again, dust 1eth is too much
             if (deposit < WAD) {
                 // dont deposit dust
                 return;
@@ -147,16 +161,22 @@ contract YEthStakerStrategy is
     function _freeFunds(uint256 _amount) internal override {
         uint256 debt = TokenizedStrategy.totalAssets() -
             asset.balanceOf(address(this));
+
+        // review: why aren't you checking available amount first?
+        // if facility is full, you will have loose assets.
+
         // calculate equivalent share of st-yETH
         uint256 stakedAmount = (styETH.balanceOf(address(this)) * _amount) /
             debt;
         // redeem for yETH
         if (stakedAmount > 0) {
+            // review: you are overriding the _amount here? why?
             _amount = styETH.redeem(stakedAmount);
         }
 
         // first try withdrawing from the facility
         IDepositFacility facility = depositFacility;
+        // review: again, make the facility address a requirement and reduce code
         if (address(facility) != address(0)) {
             uint256 withdrawAmount;
             (, withdrawAmount) = facility.available();
@@ -164,6 +184,8 @@ contract YEthStakerStrategy is
                 if (withdrawAmount > _amount) {
                     withdrawAmount = _amount;
                 }
+
+                // review: plz, do not override _amount the _ means read only
                 _amount -= withdrawAmount;
                 facility.withdraw(withdrawAmount);
                 //slither-disable-next-line incorrect-equality
@@ -216,6 +238,10 @@ contract YEthStakerStrategy is
                 _deployFunds(balance);
             }
         }
+
+        // review: since depositFacility might have no liquidity and curve pool
+        // be unbalanced, there is a case where you still have loose assets.
+        // you need to add asset.balanceOf(address(this))
         _totalAssets = estimatedTotalAssest();
     }
 
@@ -278,10 +304,13 @@ contract YEthStakerStrategy is
      *
      * @return estimated total value in asset value
      */
+
+     // review: typo, Assest
     function estimatedTotalAssest() public view returns (uint256) {
         // amount of yETH in strategy
         uint256 yethAmount = styETH.maxWithdraw(address(this));
         // estimate based on max withdraw size
+        // review: in a bank run this will make estimateTotalAssets be very optimistic.
         uint256 swapAmountIn = maxSingleWithdraw;
         uint256 swapAmountOut = curvepool.get_dy(
             YETH_INDEX,
@@ -302,6 +331,8 @@ contract YEthStakerStrategy is
 
         // revoke previous allowance
         if (previous != address(0)) {
+            // review: don't you need safeApprove?
+            // actually, the newest SafeERC20 have some force methods
             WETH.approve(previous, 0);
             yETH.approve(previous, 0);
         }
@@ -316,6 +347,8 @@ contract YEthStakerStrategy is
 
     /// @notice Sets the maximum size of a single withdrawal
     /// @param _max Maximum withdrawal size
+    // review: not sure what maxSingleWithdraw is protecting from
+    // you can loop and you get the same behavior as if there wasn't a max single wd
     function setMaxSingleWithdraw(uint256 _max) external onlyManagement {
         require(_max >= WAD, "max<WAD");
         maxSingleWithdraw = _max;
@@ -332,6 +365,8 @@ contract YEthStakerStrategy is
 
     function rebalanceDepositFacility(uint256 _amount) external onlyManagement {
         require(address(depositFacility) != address(0), "!facility");
+        // review: what's this? why would you withdraw for stYeth directly?
+        // add comments to this method
         styETH.withdraw(_amount);
     }
 
@@ -360,6 +395,16 @@ contract YEthStakerStrategy is
     function availableWithdrawLimit(
         address _owner
     ) public view override returns (uint256) {
+        // review:
+        // you can do:
+        /*
+          uint256 fromDepositFacility;
+          if (address(depositFacility) != address(0)) {
+              (, fromDepositFacility) = depositFacility.available();
+          }
+          return asset.balanceOf(address(this)) + fromDepositFacility + maxSingleWithdraw
+        */
+
         if (address(depositFacility) != address(0)) {
             (, uint256 withdraw) = depositFacility.available();
             return
@@ -402,7 +447,7 @@ contract YEthStakerStrategy is
             uint256 num = yETHPool.num_assets();
             yETHPool.remove_liquidity(balance, new uint256[](num));
         }
-        // LSTs should be sweeped and swapped to WETH
+        // LSTs should be sweeped and swapped to WETH through the trade factory
     }
 
     /// @notice Sweep token, only governance can call it
