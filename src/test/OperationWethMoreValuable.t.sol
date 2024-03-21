@@ -171,7 +171,7 @@ contract OperationWethMoreValuableTest is Setup {
         uint8 _depositFacilityFactor
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-        vm.assume(_depositFacilityFactor > 0 && _depositFacilityFactor < 10);
+        vm.assume(_depositFacilityFactor > 0);
 
         uint256 maxLossTolerance = (strategy.swapSlippage() * _amount) /
             MAX_BPS;
@@ -180,12 +180,12 @@ contract OperationWethMoreValuableTest is Setup {
         deal(
             address(strategy.yETH()),
             address(depositFacility),
-            (_amount * _depositFacilityFactor) / 5
+            (_amount * _depositFacilityFactor) / 125
         );
         deal(
             address(strategy.asset()),
             address(depositFacility),
-            (_amount * _depositFacilityFactor) / 5
+            (_amount * _depositFacilityFactor) / 125
         );
 
         vm.prank(management);

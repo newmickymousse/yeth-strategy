@@ -20,4 +20,6 @@ interface IStrategyInterface is IStrategy {
     function removeRewardTokenForSwapping(address _from, address _to) external;
     function rewardTokens() external view returns (address[] memory);
     function setTradeFactory(address _tradeFactory) external;
+    function setMinDepositAmount(uint256 _minDepositAmount) external;
+    function minDepositAmount() external view returns (uint256);
 }

@@ -48,7 +48,7 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        // Some funds are left because estimatedTotalAssest uses pesimistic estimate
+        // Some funds are left because estimatedTotalAssets uses pesimistic estimate
         uint256 maxLossTolerance = (strategy.swapSlippage() * 2 * _amount) /
             MAX_BPS;
         assertLt(strategy.totalAssets(), maxLossTolerance, "!totalAssets=0");
@@ -171,5 +171,20 @@ contract OperationTest is Setup {
         vm.prank(management);
         strategy.removeRewardTokenForSwapping(from, to);
         assertEq(strategy.rewardTokens().length, 0, "!rewardTokens");
+    }
+
+    function test_setMinDepositAmount() public {
+        uint256 minDepositAmount = 1e16;
+
+        vm.expectRevert(bytes("!management"));
+        strategy.setMinDepositAmount(minDepositAmount);
+
+        vm.prank(management);
+        strategy.setMinDepositAmount(minDepositAmount);
+        assertEq(
+            strategy.minDepositAmount(),
+            minDepositAmount,
+            "!minDepositAmount"
+        );
     }
 }
