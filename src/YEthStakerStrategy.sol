@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity 0.8.18;
 
-import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
+import {BaseStrategy, ERC20} from "@periphery/Bases/HealthCheck/BaseHealthCheck.sol";
 import {CustomStrategyTriggerBase} from "@periphery/ReportTrigger/CustomStrategyTriggerBase.sol";
 import {TradeFactorySwapper} from "@periphery/swappers/TradeFactorySwapper.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
 import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
 import {IYEthPool} from "./interfaces/IYEthPool.sol";
@@ -55,6 +54,7 @@ contract YEthStakerStrategy is
     IDepositFacility public depositFacility;
     uint256 public maxSingleWithdraw = 100 * 1e18;
     uint256 public swapSlippage = 50;
+    uint256 public minDepositAmount = WAD;
 
     event DepositFacilitySet(address facility);
     event MaxSingleWithdrawSet(uint256 max);
@@ -66,11 +66,12 @@ contract YEthStakerStrategy is
         address _gov
     ) BaseStrategy(_asset, _name) {
         require(_asset == address(WETH), "Asset!=WETH");
+        require(_gov != address(0), "GOV=0x0");
+        GOV = _gov;
+
         WETH.approve(address(curvepool), type(uint256).max);
         yETH.approve(address(curvepool), type(uint256).max);
         yETH.approve(address(styETH), type(uint256).max);
-        require(_gov != address(0), "GOV=0x0");
-        GOV = _gov;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -89,12 +90,13 @@ contract YEthStakerStrategy is
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        if (_amount < WAD) {
+        if (_amount < minDepositAmount) {
             // no need to swap dust
             return;
         }
 
         uint256 amountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
+        // we are assuming weth==yeth, if we get more than 1:1, we should go through curve.
         if (amountOut > _amount) {
             // use curve pool
             amountOut = curvepool.exchange(
@@ -112,7 +114,7 @@ contract YEthStakerStrategy is
             }
             uint256 deposit;
             (deposit, ) = facility.available();
-            if (deposit < WAD) {
+            if (deposit < minDepositAmount) {
                 // dont deposit dust
                 return;
             }
@@ -145,29 +147,31 @@ contract YEthStakerStrategy is
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
+        // debt cannot be zero
         uint256 debt = TokenizedStrategy.totalAssets() -
             asset.balanceOf(address(this));
         // calculate equivalent share of st-yETH
         uint256 stakedAmount = (styETH.balanceOf(address(this)) * _amount) /
             debt;
-        // redeem for yETH
-        if (stakedAmount > 0) {
-            _amount = styETH.redeem(stakedAmount);
+        //slither-disable-next-line incorrect-equality
+        if (stakedAmount == 0) {
+            return;
         }
+        // redeem for yETH
+        uint256 unstakedYethAmount = styETH.redeem(stakedAmount);
 
         // first try withdrawing from the facility
         IDepositFacility facility = depositFacility;
         if (address(facility) != address(0)) {
-            uint256 withdrawAmount;
-            (, withdrawAmount) = facility.available();
+            (, uint256 withdrawAmount) = facility.available();
             if (withdrawAmount > 0) {
-                if (withdrawAmount > _amount) {
-                    withdrawAmount = _amount;
+                if (withdrawAmount > unstakedYethAmount) {
+                    withdrawAmount = unstakedYethAmount;
                 }
-                _amount -= withdrawAmount;
+                unstakedYethAmount -= withdrawAmount;
                 facility.withdraw(withdrawAmount);
                 //slither-disable-next-line incorrect-equality
-                if (_amount == 0) {
+                if (unstakedYethAmount == 0) {
                     return;
                 }
             }
@@ -175,12 +179,18 @@ contract YEthStakerStrategy is
 
         // use curve for any remaining amount
         // calculate minimum out amount based on EMA oracle and a configurable slippage
-        uint256 minAmountOut = (_amount *
+        uint256 minAmountOut = (unstakedYethAmount *
             curvepool.ema_price() *
             (MAX_BPS - swapSlippage)) /
             MAX_BPS /
             WAD;
-        curvepool.exchange(YETH_INDEX, WETH_INDEX, _amount, minAmountOut);
+        curvepool.exchange(
+            YETH_INDEX,
+            WETH_INDEX,
+            unstakedYethAmount,
+            minAmountOut
+        );
+        // user took a loss if: unstakedYethAmount < _amount
     }
 
     /**
@@ -216,7 +226,7 @@ contract YEthStakerStrategy is
                 _deployFunds(balance);
             }
         }
-        _totalAssets = estimatedTotalAssest();
+        _totalAssets = estimatedTotalAssets();
     }
 
     /**
@@ -231,7 +241,7 @@ contract YEthStakerStrategy is
 
         // don't trigger for dust
         uint256 assetBalance = asset.balanceOf(address(this));
-        if (assetBalance > WAD) {
+        if (assetBalance > minDepositAmount) {
             // check if the curve pool has enough liquidity
             uint256 swapAmountOut = curvepool.get_dy(
                 WETH_INDEX,
@@ -248,7 +258,7 @@ contract YEthStakerStrategy is
             // check if the deposit facility has enough capacity
             if (address(depositFacility) != address(0)) {
                 (uint256 deposit, ) = depositFacility.available();
-                if (deposit > WAD) {
+                if (deposit > minDepositAmount) {
                     // it is ok deposit even just WAD
                     return (
                         true,
@@ -278,11 +288,12 @@ contract YEthStakerStrategy is
      *
      * @return estimated total value in asset value
      */
-    function estimatedTotalAssest() public view returns (uint256) {
+    function estimatedTotalAssets() public view returns (uint256) {
         // amount of yETH in strategy
         uint256 yethAmount = styETH.maxWithdraw(address(this));
         // estimate based on max withdraw size
         uint256 swapAmountIn = maxSingleWithdraw;
+        // in a bank run this will make estimateTotalAssets be very optimistic.
         uint256 swapAmountOut = curvepool.get_dy(
             YETH_INDEX,
             WETH_INDEX,
@@ -330,9 +341,12 @@ contract YEthStakerStrategy is
         emit SwapSlippageSet(_slippage);
     }
 
-    function rebalanceDepositFacility(uint256 _amount) external onlyManagement {
-        require(address(depositFacility) != address(0), "!facility");
-        styETH.withdraw(_amount);
+    /// @notice Sets the minDepositAmount amount, minimum amount to be considered for deposit
+    /// @param _minDepositAmount minDepositAmount amount
+    function setMinDepositAmount(
+        uint256 _minDepositAmount
+    ) external onlyManagement {
+        minDepositAmount = _minDepositAmount;
     }
 
     /*//////////////////////////////////////////////////////////////
