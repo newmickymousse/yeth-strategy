@@ -147,16 +147,18 @@ contract YEthStakerStrategy is
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
+        // debt cannot be zero
         uint256 debt = TokenizedStrategy.totalAssets() -
             asset.balanceOf(address(this));
         // calculate equivalent share of st-yETH
         uint256 stakedAmount = (styETH.balanceOf(address(this)) * _amount) /
             debt;
-        // redeem for yETH
-        uint256 unstakedYethAmount;
-        if (stakedAmount > 0) {
-            unstakedYethAmount = styETH.redeem(stakedAmount);
+        //slither-disable-next-line incorrect-equality
+        if (stakedAmount == 0) {
+            return;
         }
+        // redeem for yETH
+        uint256 unstakedYethAmount = styETH.redeem(stakedAmount);
 
         // first try withdrawing from the facility
         IDepositFacility facility = depositFacility;
