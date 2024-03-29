@@ -416,7 +416,7 @@ contract YEthStakerStrategy is
             uint256 num = yETHPool.num_assets();
             yETHPool.remove_liquidity(balance, new uint256[](num));
         }
-        // LSTs should be sweeped and swapped to WETH
+        // LSTs should be sweeped and swapped to WETH through the trade factory
     }
 
     /// @notice Sweep token, only governance can call it
