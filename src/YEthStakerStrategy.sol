@@ -283,8 +283,7 @@ contract YEthStakerStrategy is
     }
 
     /**
-     * @notice Internal function to calculate the value of different assets
-     * in asset value.
+     * @notice Estimate the total value of all assets in the asset value.
      *
      * @return estimated total value in asset value
      */
