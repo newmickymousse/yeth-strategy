@@ -9,7 +9,6 @@ import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 import {ICurvePool} from "../../interfaces/ICurvePool.sol";
 import {ICommonReportTrigger} from "../../interfaces/ICommonReportTrigger.sol";
 import {IYEthStaker} from "../../interfaces/IYEthStaker.sol";
-import {MockDepositFacility} from "../MockDepositFacility.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -20,6 +19,12 @@ interface IFactory {
     function set_protocol_fee_bps(uint16) external;
 
     function set_protocol_fee_recipient(address) external;
+}
+
+interface IDepositFacility {
+    function management() external view returns (address);
+
+    function set_strategy(address) external;
 }
 
 contract Setup is ExtendedTest, IEvents {
@@ -55,7 +60,7 @@ contract Setup is ExtendedTest, IEvents {
 
     uint256 public constant WAD = 1e18;
 
-    MockDepositFacility public depositFacility;
+    IDepositFacility public constant depositFacility = IDepositFacility(0x818a8e8240Ac57949E28577B81e9eB9ECD7fc5e1);
 
     function setUp() public virtual {
         _setTokenAddrs();
@@ -78,8 +83,6 @@ contract Setup is ExtendedTest, IEvents {
         vm.label(management, "management");
         vm.label(address(strategy), "strategy");
         vm.label(performanceFeeRecipient, "performanceFeeRecipient");
-
-        depositFacility = new MockDepositFacility();
         vm.label(address(depositFacility), "depositFacility");
     }
 
@@ -88,9 +91,9 @@ contract Setup is ExtendedTest, IEvents {
         IStrategyInterface _strategy = IStrategyInterface(
             address(
                 new YEthStakerStrategy(
-                    address(asset),
-                    "Tokenized Strategy",
-                    GOV
+                    "yETH Strategy",
+                    address(0),
+                    address(depositFacility)
                 )
             )
         );
@@ -109,6 +112,10 @@ contract Setup is ExtendedTest, IEvents {
         vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
         ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF)
             .setAcceptableBaseFee(1e18);
+
+        // setup deposit facility for usage with strategy
+        vm.prank(depositFacility.management());
+        depositFacility.set_strategy(address(_strategy));
 
         return address(_strategy);
     }

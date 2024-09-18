@@ -28,6 +28,10 @@ contract MockDepositFacility is IDepositFacility {
         _withdraw = WETH.balanceOf(address(this));
     }
 
+    function fee_rates() external view returns (uint256 _deposit, uint256 _withdraw) {
+        return (0, 0);
+    }
+
     function deposit(uint256 _amount, bool _stake) external returns (uint256) {
         WETH.safeTransferFrom(msg.sender, address(this), _amount);
         if (_stake) {

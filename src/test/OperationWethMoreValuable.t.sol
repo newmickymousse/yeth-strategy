@@ -176,18 +176,6 @@ contract OperationWethMoreValuableTest is Setup {
         uint256 maxLossTolerance = (strategy.swapSlippage() * _amount) /
             MAX_BPS;
 
-        // Airdrop yETH to deposit facility
-        deal(
-            address(strategy.yETH()),
-            address(depositFacility),
-            (_amount * _depositFacilityFactor) / 125
-        );
-        deal(
-            address(strategy.asset()),
-            address(depositFacility),
-            (_amount * _depositFacilityFactor) / 125
-        );
-
         vm.prank(management);
         strategy.setDepositFacility(address(depositFacility));
 

@@ -31,8 +31,8 @@ contract YEthStakerStrategy is
 {
     using SafeERC20 for ERC20;
 
-    ICurvePool public constant curvepool =
-        ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22); // 0 is WETH, 1 is yETH
+    enum DepositFlag { OFF, FORCE_ONCE, FACILITY_ONLY, ON }
+    
     ERC20 public constant WETH =
         ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     ERC20 public constant yETH =
@@ -49,29 +49,37 @@ contract YEthStakerStrategy is
     uint256 internal constant MAX_BPS = 10000;
     uint256 internal constant WAD = 1e18;
 
-    address immutable GOV;
-
+    ICurvePool public curvePool; // 0 is WETH, 1 is yETH
     IDepositFacility public depositFacility;
-    uint256 public maxSingleWithdraw = 100 * 1e18;
+    uint256 public maxSingleWithdraw = 50 * WAD;
     uint256 public swapSlippage = 50;
-    uint256 public minDepositAmount = WAD;
+    uint256 public minDepositAmount = 10 * WAD;
+    DepositFlag public depositFlag = DepositFlag.OFF;
 
+    event CurvePoolSet(address facility);
     event DepositFacilitySet(address facility);
     event MaxSingleWithdrawSet(uint256 max);
     event SwapSlippageSet(uint256 slippage);
 
     constructor(
-        address _asset,
         string memory _name,
-        address _gov
-    ) BaseStrategy(_asset, _name) {
-        require(_asset == address(WETH), "Asset!=WETH");
-        require(_gov != address(0), "GOV=0x0");
-        GOV = _gov;
-
-        WETH.approve(address(curvepool), type(uint256).max);
-        yETH.approve(address(curvepool), type(uint256).max);
+        address _curve,
+        address _facility
+    ) BaseStrategy(address(WETH), _name) {
         yETH.approve(address(styETH), type(uint256).max);
+        require(_curve != address(0) || _facility != address(0));
+
+        if (_curve != address(0)) {
+            curvePool = ICurvePool(_curve);
+            WETH.approve(_curve, type(uint256).max);
+            yETH.approve(_curve, type(uint256).max);
+        }
+
+        if (_facility != address(0)) {
+            depositFacility = IDepositFacility(_facility);
+            WETH.approve(_facility, type(uint256).max);
+            yETH.approve(_facility, type(uint256).max);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -90,39 +98,7 @@ contract YEthStakerStrategy is
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        if (_amount < minDepositAmount) {
-            // no need to swap dust
-            return;
-        }
-
-        uint256 amountOut = curvepool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
-        // we are assuming weth==yeth, if we get more than 1:1, we should go through curve.
-        if (amountOut > _amount) {
-            // use curve pool
-            amountOut = curvepool.exchange(
-                WETH_INDEX,
-                YETH_INDEX,
-                _amount,
-                _amount
-            );
-            styETH.deposit(amountOut);
-        } else {
-            // use deposit facility if there is available capacity
-            IDepositFacility facility = depositFacility;
-            if (address(facility) == address(0)) {
-                return;
-            }
-            uint256 deposit;
-            (deposit, ) = facility.available();
-            if (deposit < minDepositAmount) {
-                // dont deposit dust
-                return;
-            }
-            if (_amount < deposit) {
-                deposit = _amount;
-            }
-            facility.deposit(deposit, true);
-        }
+        _invest(_amount, false);
     }
 
     /**
@@ -178,19 +154,16 @@ contract YEthStakerStrategy is
         }
 
         // use curve for any remaining amount
-        // calculate minimum out amount based on EMA oracle and a configurable slippage
-        uint256 minAmountOut = (unstakedYethAmount *
-            curvepool.ema_price() *
-            (MAX_BPS - swapSlippage)) /
-            MAX_BPS /
-            WAD;
-        curvepool.exchange(
+        require(address(curvePool) != address(0));
+
+        // calculate minimum out amount based on configured slippage
+        uint256 minAmountOut = unstakedYethAmount * (MAX_BPS - swapSlippage) / MAX_BPS;
+        curvePool.exchange(
             YETH_INDEX,
             WETH_INDEX,
             unstakedYethAmount,
             minAmountOut
         );
-        // user took a loss if: unstakedYethAmount < _amount
     }
 
     /**
@@ -220,10 +193,17 @@ contract YEthStakerStrategy is
         override
         returns (uint256 _totalAssets)
     {
-        if (!TokenizedStrategy.isShutdown()) {
+        DepositFlag flag = depositFlag;
+        if (!TokenizedStrategy.isShutdown() && flag != DepositFlag.OFF) {
+            // if forced by management, unset and continue as if turned on in full
+            if (flag == DepositFlag.FORCE_ONCE) {
+                flag = DepositFlag.ON;
+                depositFlag = DepositFlag.OFF;
+            }
+
             uint256 balance = asset.balanceOf(address(this));
             if (balance > 0) {
-                _deployFunds(balance);
+                _invest(balance, flag == DepositFlag.ON);
             }
         }
         _totalAssets = estimatedTotalAssets();
@@ -239,47 +219,87 @@ contract YEthStakerStrategy is
     ) external view override returns (bool, bytes memory) {
         if (TokenizedStrategy.isShutdown()) return (false, bytes("Shutdown"));
 
-        // don't trigger for dust
-        uint256 assetBalance = asset.balanceOf(address(this));
-        if (assetBalance > minDepositAmount) {
-            // check if the curve pool has enough liquidity
-            uint256 swapAmountOut = curvepool.get_dy(
-                WETH_INDEX,
-                YETH_INDEX,
-                assetBalance
-            );
-            if (swapAmountOut > assetBalance) {
-                return (
-                    true,
-                    abi.encodeWithSelector(TokenizedStrategy.report.selector)
-                );
-            }
+        DepositFlag flag = depositFlag;
 
-            // check if the deposit facility has enough capacity
-            if (address(depositFacility) != address(0)) {
-                (uint256 deposit, ) = depositFacility.available();
-                if (deposit > minDepositAmount) {
-                    // it is ok deposit even just WAD
-                    return (
-                        true,
-                        abi.encodeWithSelector(
-                            TokenizedStrategy.report.selector
-                        )
-                    );
-                }
-            }
+        // report if forced or if the full profit unlock time has passed
+        if (
+            flag == DepositFlag.FORCE_ONCE || block.timestamp > 
+            TokenizedStrategy.lastReport() + TokenizedStrategy.profitMaxUnlockTime()
+        ) {
+            return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
         }
 
         if (!COMMON_REPORT_TRIGGER.isCurrentBaseFeeAcceptable()) {
-            return (false, bytes("Base fee is too high"));
+            return (false, bytes("BaseFee"));
         }
 
-        return (
-            // Return true is the full profit unlock time has passed since the last report.
-            block.timestamp - TokenizedStrategy.lastReport() >
-                TokenizedStrategy.profitMaxUnlockTime(),
-            abi.encodeWithSelector(TokenizedStrategy.report.selector)
-        );
+        if (flag == DepositFlag.OFF) {
+            return (false, bytes("Off"));
+        }
+
+        // don't trigger for dust
+        uint256 assetBalance = asset.balanceOf(address(this));
+        if (assetBalance < minDepositAmount) {
+            return (false, bytes("Dust"));
+        }
+
+        // check deposit facility capacity
+        IDepositFacility facility = depositFacility;
+        if (address(facility) != address(0)) {
+            (uint256 available,) = facility.available();
+
+            if (available >= minDepositAmount) {
+                return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
+            }
+
+            if (available > assetBalance) {
+                available = assetBalance;
+            }
+            assetBalance -= available;
+        }
+
+        ICurvePool pool = curvePool;
+        if (flag == DepositFlag.ON && assetBalance > 0 && address(pool) != address(0)) {
+            // check if the curve pool has enough liquidity
+            uint256 swapAmountOut = curvePool.get_dy(WETH_INDEX, YETH_INDEX, assetBalance);
+
+            if (swapAmountOut >= assetBalance) {
+                return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
+            }
+        }
+        
+        return (false, bytes("Liquidity"));
+    }
+
+    function _invest(uint256 _amount, bool _useCurve) internal {
+        // use deposit facility first
+        IDepositFacility facility = depositFacility;
+        if (address(facility) != address(0)) {
+            uint256 deposit;
+            (deposit, ) = facility.available();
+            if (deposit > _amount) {
+                deposit = _amount;
+            }
+            if (deposit > 0) {
+                facility.deposit(deposit, true);
+                _amount -= deposit;
+            }
+        }
+
+        // fall back to Curve pool if needed
+        ICurvePool pool = curvePool;
+        if (!_useCurve || _amount == 0 || address(pool) == address(0)) {
+            return;
+        }
+
+        uint256 amountOut = pool.get_dy(WETH_INDEX, YETH_INDEX, _amount);
+        if (amountOut < _amount) {
+            // don't swap at below 1:1
+            return;
+        }
+
+        amountOut = pool.exchange(WETH_INDEX, YETH_INDEX, _amount, _amount);
+        styETH.deposit(amountOut);
     }
 
     /**
@@ -290,21 +310,53 @@ contract YEthStakerStrategy is
     function estimatedTotalAssets() public view returns (uint256) {
         // amount of yETH in strategy
         uint256 yethAmount = styETH.maxWithdraw(address(this));
+
+        if (address(depositFacility) != address(0)) {
+            // estimate based on withdraw fee from facility
+            (, uint256 fee) = depositFacility.fee_rates();
+            return 
+                yethAmount * (MAX_BPS - fee) / MAX_BPS + 
+                asset.balanceOf(address(this));
+        }
+
+        // if deposit facility is not set, curve pool is guaranteed to be.
         // estimate based on max withdraw size
         uint256 swapAmountIn = maxSingleWithdraw;
         // in a bank run this will make estimateTotalAssets be very optimistic.
-        uint256 swapAmountOut = curvepool.get_dy(
+        uint256 swapAmountOut = curvePool.get_dy(
             YETH_INDEX,
             WETH_INDEX,
             swapAmountIn
         );
         return
-            (yethAmount * swapAmountOut) /
-            swapAmountIn +
+            yethAmount * swapAmountOut / swapAmountIn + 
             asset.balanceOf(address(this));
     }
 
-    /// @notice Sets the address of the deposit and withdrawal facility, allowing 1:1 exchange
+    /// @notice Sets the address of the curve pool
+    /// @param _pool Address of new curve pool
+    function setCurvePool(address _pool) external onlyManagement {
+        address previous = address(curvePool);
+        curvePool = ICurvePool(_pool);
+
+        // revoke previous allowance
+        if (previous != address(0)) {
+            WETH.approve(previous, 0);
+            yETH.approve(previous, 0);
+        }
+
+        // set new allowance
+        if (_pool != address(0)) {
+            WETH.approve(_pool, type(uint256).max);
+            yETH.approve(_pool, type(uint256).max);
+        }
+        else {
+            require(address(depositFacility) != address(0));
+        }
+        emit CurvePoolSet(_pool);
+    }
+
+    /// @notice Sets the address of the deposit and withdrawal facility
     /// @param _facility Address of new facility
     function setDepositFacility(address _facility) external onlyManagement {
         address previous = address(depositFacility);
@@ -320,6 +372,9 @@ contract YEthStakerStrategy is
         if (_facility != address(0)) {
             WETH.approve(_facility, type(uint256).max);
             yETH.approve(_facility, type(uint256).max);
+        }
+        else {
+            require(address(curvePool) != address(0));
         }
         emit DepositFacilitySet(_facility);
     }
@@ -348,6 +403,12 @@ contract YEthStakerStrategy is
         minDepositAmount = _minDepositAmount;
     }
 
+    /// @notice Sets the flag for configuring deposits during reports
+    /// @param _flag Flag enum value
+    function setDepositFlag(DepositFlag _flag) external onlyManagement {
+        depositFlag = _flag;
+    }
+
     /*//////////////////////////////////////////////////////////////
                     OPTIONAL TO OVERRIDE BY STRATEGIST
     //////////////////////////////////////////////////////////////*/
@@ -373,11 +434,6 @@ contract YEthStakerStrategy is
     function availableWithdrawLimit(
         address _owner
     ) public view override returns (uint256) {
-        if (address(depositFacility) != address(0)) {
-            (, uint256 withdraw) = depositFacility.available();
-            return
-                asset.balanceOf(address(this)) + maxSingleWithdraw + withdraw;
-        }
         return asset.balanceOf(address(this)) + maxSingleWithdraw;
     }
 
@@ -418,11 +474,10 @@ contract YEthStakerStrategy is
         // LSTs should be sweeped and swapped to WETH through the trade factory
     }
 
-    /// @notice Sweep token, only governance can call it
-    function sweep(address _token) external {
-        require(msg.sender == GOV, "!GOV");
+    /// @notice Sweep token, only management can call it
+    function sweep(address _token) external onlyManagement {
         require(_token != address(asset), "!asset");
-        ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
+        // ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
     }
 
     /**
@@ -430,8 +485,7 @@ contract YEthStakerStrategy is
      * @dev For disabling set address(0).
      * @param _tradeFactory The address of the trade factory contract.
      */
-    function setTradeFactory(address _tradeFactory) external {
-        require(msg.sender == GOV, "!GOV");
+    function setTradeFactory(address _tradeFactory) external onlyManagement {
         _setTradeFactory(_tradeFactory, address(asset));
     }
 

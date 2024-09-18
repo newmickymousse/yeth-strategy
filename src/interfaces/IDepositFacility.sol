@@ -6,6 +6,10 @@ interface IDepositFacility {
         external
         view
         returns (uint256 _deposit, uint256 _withdraw);
+    function fee_rates()
+        external
+        view
+        returns (uint256 _deposit, uint256 _withdraw);
     function deposit(uint256 _amount, bool _stake) external returns (uint256);
     function withdraw(uint256 _amount) external;
 }
