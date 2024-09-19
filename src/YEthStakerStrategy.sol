@@ -3,7 +3,7 @@ pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@periphery/Bases/HealthCheck/BaseHealthCheck.sol";
 import {CustomStrategyTriggerBase} from "@periphery/ReportTrigger/CustomStrategyTriggerBase.sol";
-import {TradeFactorySwapper} from "@periphery/swappers/TradeFactorySwapper.sol";
+import {AuctionSwapper} from "@periphery/swappers/AuctionSwapper.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ICurvePool} from "./interfaces/ICurvePool.sol";
 import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
@@ -27,7 +27,7 @@ import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 contract YEthStakerStrategy is
     BaseStrategy,
     CustomStrategyTriggerBase,
-    TradeFactorySwapper
+    AuctionSwapper
 {
     using SafeERC20 for ERC20;
 
@@ -49,6 +49,8 @@ contract YEthStakerStrategy is
     uint256 internal constant MAX_BPS = 10000;
     uint256 internal constant WAD = 1e18;
 
+    address immutable GOV;
+
     ICurvePool public curvePool; // 0 is WETH, 1 is yETH
     IDepositFacility public depositFacility;
     uint256 public maxSingleWithdraw = 50 * WAD;
@@ -63,9 +65,12 @@ contract YEthStakerStrategy is
 
     constructor(
         string memory _name,
+        address _gov,
         address _curve,
         address _facility
     ) BaseStrategy(address(WETH), _name) {
+        GOV = _gov;
+
         yETH.approve(address(styETH), type(uint256).max);
         require(_curve != address(0) || _facility != address(0));
 
@@ -471,64 +476,24 @@ contract YEthStakerStrategy is
             uint256 num = yETHPool.num_assets();
             yETHPool.remove_liquidity(balance, new uint256[](num));
         }
-        // LSTs should be sweeped and swapped to WETH through the trade factory
+        // LSTs should be sweeped and swapped back to WETH by governance
     }
 
     /// @notice Sweep token, only management can call it
     function sweep(address _token) external onlyManagement {
         require(_token != address(asset), "!asset");
-        // ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
+        ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
     }
 
-    /**
-     * @notice Set the trade factory contract address.
-     * @dev For disabling set address(0).
-     * @param _tradeFactory The address of the trade factory contract.
-     */
-    function setTradeFactory(address _tradeFactory) external onlyManagement {
-        _setTradeFactory(_tradeFactory, address(asset));
+    /// @notice Set auction contract, only management can call it
+    function setAuction(address _auction) external onlyManagement {
+        auction = _auction;
     }
 
-    /**
-     * @notice Add a reward token for swapping using TradeFactorySwapper.
-     * @dev Only management can call it.
-     * @param _from The address of the token to swap from. Reward token.
-     * @param _to The address of the token to swap to. Asset token, yETH or st_yETH.
-     */
-    function addRewardTokenForSwapping(
-        address _from,
-        address _to
-    ) external onlyManagement {
+    function _auctionKicked(address _token) internal override returns (uint256) {
         require(
-            _from != address(asset) &&
-                _from != address(yETH) &&
-                _from != address(styETH),
-            "!from token"
+            _token != address(asset) && _token != address(yETH) && _token != address(styETH)
         );
-        require(
-            _to == address(asset) ||
-                _to == address(yETH) ||
-                _to == address(styETH),
-            "!to token"
-        );
-        _addToken(_from, _to);
-    }
-
-    /**
-     * @notice Remove a reward token for swapping using TradeFactorySwapper.
-     * @dev Only management can call it.
-     * @param _from The address of the token to swap from. Reward token.
-     * @param _to The address of the token to swap to. Asset token, yETH or st_yETH.
-     */
-    function removeRewardTokenForSwapping(
-        address _from,
-        address _to
-    ) external onlyManagement {
-        _removeToken(_from, _to);
-    }
-
-    /// must override function from TradeFactorySwapper
-    function _claimRewards() internal override {
-        // There are no rewards to claim
+        return super._auctionKicked(_token);
     }
 }

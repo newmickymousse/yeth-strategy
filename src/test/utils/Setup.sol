@@ -93,7 +93,8 @@ contract Setup is ExtendedTest, IEvents {
                 new YEthStakerStrategy(
                     "yETH Strategy",
                     address(0),
-                    address(depositFacility)
+                    address(depositFacility),
+                    GOV
                 )
             )
         );
