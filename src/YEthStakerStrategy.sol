@@ -10,6 +10,7 @@ import {IYEthStaker} from "./interfaces/IYEthStaker.sol";
 import {IYEthPool} from "./interfaces/IYEthPool.sol";
 import {IDepositFacility} from "./interfaces/IDepositFacility.sol";
 import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
+import {IGenericGovernance, IWeightGovernance} from "./interfaces/IGovernance.sol";
 
 /**
  * The `TokenizedStrategy` variable can be used to retrieve the strategies
@@ -483,6 +484,14 @@ contract YEthStakerStrategy is
     function sweep(address _token) external onlyManagement {
         require(_token != address(asset), "!asset");
         ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
+    }
+
+    function vote(address _target, uint256 _idx, uint256 _yea, uint256 _nay, uint256 _abstain) external onlyManagement {
+        IGenericGovernance(_target).vote(_idx, _yea, _nay, _abstain);
+    }
+
+    function weightVote(address _target, uint256[] calldata _votes) external onlyManagement {
+        IWeightGovernance(_target).vote(_votes);
     }
 
     /// @notice Set auction contract, only management can call it
