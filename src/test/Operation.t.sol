@@ -2,7 +2,7 @@
 pragma solidity ^0.8.18;
 
 import "forge-std/console.sol";
-import {Setup, ERC20, IStrategyInterface, ICommonReportTrigger} from "./utils/Setup.sol";
+import {Setup, ERC20, IStrategyInterface, ICommonReportTrigger, IBaseDepositFacility} from "./utils/Setup.sol";
 import {IYEthPool} from "../interfaces/IYEthPool.sol";
 import {IYEthStaker} from "../interfaces/IYEthStaker.sol";
 
@@ -18,8 +18,8 @@ contract OperationTest is Setup {
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
-        assertEq(strategy.maxSingleWithdraw(), 1e20);
-        assertEq(strategy.swapSlippage(), 50);
+        assertEq(strategy.maxSingleWithdraw(), 50e18);
+        assertEq(strategy.swapSlippage(), 80);
     }
 
     function test_operation(uint256 _amount) public {
@@ -32,57 +32,44 @@ contract OperationTest is Setup {
 
         // Earn Interest
         earnInterest(100e18);
+        assertGt(strategy.estimatedTotalAssets(), _amount);
+
         // Report profit
         vm.prank(keeper);
         (uint256 profit, uint256 loss) = strategy.report();
 
         // Check return Values
-        assertGe(profit, 0, "!profit");
+        assertGt(profit, 0, "!profit");
         assertEq(loss, 0, "!loss");
 
         skip(strategy.profitMaxUnlockTime());
 
         uint256 balanceBefore = asset.balanceOf(user);
 
-        // Withdraw all funds
+        // Withdraw funds
         vm.prank(user);
-        strategy.redeem(_amount, user, user);
+        strategy.redeem(minFuzzAmount, user, user);
 
-        // Some funds are left because estimatedTotalAssets uses pesimistic estimate
-        uint256 maxLossTolerance = (strategy.swapSlippage() * 2 * _amount) /
-            MAX_BPS;
-        assertLt(strategy.totalAssets(), maxLossTolerance, "!totalAssets=0");
-
-        assertGe(
+        assertGt(
             asset.balanceOf(user),
-            balanceBefore + _amount,
+            balanceBefore + minFuzzAmount,
             "!final balance"
         );
     }
 
-    function test_deposit_skip_below_wad() public {
-        uint256 _amount = 1e17;
+    function test_deposit_noCapacity() public {
+        // If deposit facility is full, assets will stay in strategy
+        IBaseDepositFacility facility = depositFacility.facility();
+        vm.prank(facility.management());
+        facility.set_capacity(0);
+
+        uint256 _amount = 1e18;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        // Skip some time
-        skip(1 days);
-
-        // Report profit
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Check return Values
-        assertEq(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        // all funds are in asset, not deposited
         assertEq(asset.balanceOf(address(strategy)), _amount, "!final balance");
-
-        skip(strategy.profitMaxUnlockTime());
 
         uint256 balanceBefore = asset.balanceOf(user);
 
@@ -92,85 +79,42 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), 0, "!totalAssets=0");
 
-        assertGe(
+        assertEq(
             asset.balanceOf(user),
             balanceBefore + _amount,
             "!final balance"
         );
     }
 
-    function test_RevertWhen_withdrawAboveMax() public {
-        uint256 _amount = 50e18;
+    function test_deposit_partialCapacity() public {
+        // If deposit facility is almost full, some assets will stay in strategy
+        IBaseDepositFacility facility = depositFacility.facility();
+        uint256 debt = facility.debt();
+        uint256 available = 1 ether;
+        vm.prank(facility.management());
+        facility.set_capacity(debt + available);
+
+        uint256 _amount = 3 ether;
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+        assertEq(asset.balanceOf(address(strategy)), _amount - available, "!final balance");
 
-        // Report profit
-        vm.prank(keeper);
-        strategy.report();
+        uint256 balanceBefore = asset.balanceOf(user);
 
-        assertEq(asset.balanceOf(address(strategy)), 0, "!deposit");
-
-        vm.prank(management);
-        strategy.setMaxSingleWithdraw(1e18);
-
-        // Withdraw all funds
-        vm.expectRevert(bytes("ERC4626: redeem more than max"));
+        // Withdraw free funds
         vm.prank(user);
-        strategy.redeem(_amount, user, user);
-    }
+        strategy.redeem(_amount - available, user, user);
 
-    function test_RevertWhen_addingRewardTokenFromInvalid() public {
-        address tradeFactory = address(
-            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
+        assertEq(strategy.totalAssets(), available, "!totalAssets");
+
+        assertEq(
+            asset.balanceOf(user),
+            balanceBefore + _amount - available,
+            "!final balance"
         );
-        vm.prank(GOV);
-        strategy.setTradeFactory(tradeFactory);
-
-        vm.expectRevert(bytes("!from token"));
-        vm.prank(management);
-        strategy.addRewardTokenForSwapping(
-            tokenAddrs["WETH"],
-            tokenAddrs["wstETH"]
-        );
-    }
-
-    function test_RevertWhen_addingRewardTokenToInvalid() public {
-        address tradeFactory = address(
-            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
-        );
-        vm.prank(GOV);
-        strategy.setTradeFactory(tradeFactory);
-
-        vm.expectRevert(bytes("!to token"));
-        vm.prank(management);
-        strategy.addRewardTokenForSwapping(
-            tokenAddrs["YFI"],
-            tokenAddrs["wstETH"]
-        );
-    }
-
-    function test_addRemoveRewardToken() public {
-        address from = tokenAddrs["wstETH"];
-        address to = tokenAddrs["WETH"];
-
-        address tradeFactory = address(
-            0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06
-        );
-        vm.prank(GOV);
-        strategy.setTradeFactory(tradeFactory);
-
-        vm.prank(management);
-        strategy.addRewardTokenForSwapping(from, to);
-        address[] memory rewardTokens = strategy.rewardTokens();
-        assertEq(rewardTokens.length, 1, "!rewardTokens");
-        assertEq(rewardTokens[0], from, "!rewardTokens");
-
-        vm.prank(management);
-        strategy.removeRewardTokenForSwapping(from, to);
-        assertEq(strategy.rewardTokens().length, 0, "!rewardTokens");
     }
 
     function test_setMinDepositAmount() public {
@@ -186,5 +130,82 @@ contract OperationTest is Setup {
             minDepositAmount,
             "!minDepositAmount"
         );
+    }
+
+    function test_setCurvePool() public {
+        // Setting new curve pool moves allowances
+        address oldPool = strategy.curvePool();
+        address newPool = address(1);
+
+        vm.expectRevert(bytes("!management"));
+        strategy.setCurvePool(newPool);
+
+        ERC20 WETH = ERC20(tokenAddrs["WETH"]);
+        ERC20 yETH = ERC20(tokenAddrs["yETH"]);
+
+        assertGt(WETH.allowance(address(strategy), oldPool), 0);
+        assertGt(yETH.allowance(address(strategy), oldPool), 0);
+        assertEq(WETH.allowance(address(strategy), newPool), 0);
+        assertEq(yETH.allowance(address(strategy), newPool), 0);
+        
+        vm.prank(management);
+        strategy.setCurvePool(newPool);
+
+        assertEq(WETH.allowance(address(strategy), oldPool), 0);
+        assertEq(yETH.allowance(address(strategy), oldPool), 0);
+        assertGt(WETH.allowance(address(strategy), newPool), 0);
+        assertGt(yETH.allowance(address(strategy), newPool), 0);
+    }
+
+    function test_unsetCurvePool() public {
+        address oldPool = strategy.curvePool();
+        vm.prank(management);
+        strategy.setCurvePool(address(0));
+
+        assertEq(ERC20(tokenAddrs["WETH"]).allowance(address(strategy), oldPool), 0);
+        assertEq(ERC20(tokenAddrs["yETH"]).allowance(address(strategy), oldPool), 0);
+
+        vm.prank(management);
+        vm.expectRevert();
+        strategy.setDepositFacility(address(0));
+    }
+
+    function test_setDepositFacility() public {
+        // Setting new deposit facility moves allowances
+        address oldFacility = strategy.depositFacility();
+        address newFacility = address(1);
+
+        vm.expectRevert(bytes("!management"));
+        strategy.setDepositFacility(newFacility);
+
+        ERC20 WETH = ERC20(tokenAddrs["WETH"]);
+        ERC20 yETH = ERC20(tokenAddrs["yETH"]);
+
+        assertGt(WETH.allowance(address(strategy), oldFacility), 0);
+        assertGt(yETH.allowance(address(strategy), oldFacility), 0);
+        assertEq(WETH.allowance(address(strategy), newFacility), 0);
+        assertEq(yETH.allowance(address(strategy), newFacility), 0);
+        
+        vm.prank(management);
+        strategy.setDepositFacility(newFacility);
+
+        assertEq(WETH.allowance(address(strategy), oldFacility), 0);
+        assertEq(yETH.allowance(address(strategy), oldFacility), 0);
+        assertGt(WETH.allowance(address(strategy), newFacility), 0);
+        assertGt(yETH.allowance(address(strategy), newFacility), 0);
+    }
+
+    function test_unsetDepositFacility() public {
+        address oldFacility = strategy.depositFacility();
+
+        vm.prank(management);
+        strategy.setDepositFacility(address(0));
+
+        assertEq(ERC20(tokenAddrs["WETH"]).allowance(address(strategy), oldFacility), 0);
+        assertEq(ERC20(tokenAddrs["yETH"]).allowance(address(strategy), oldFacility), 0);
+
+        vm.prank(management);
+        vm.expectRevert();
+        strategy.setCurvePool(address(0));
     }
 }

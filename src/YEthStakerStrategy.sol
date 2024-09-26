@@ -55,7 +55,7 @@ contract YEthStakerStrategy is
     ICurvePool public curvePool; // 0 is WETH, 1 is yETH
     IDepositFacility public depositFacility;
     uint256 public maxSingleWithdraw = 50 * WAD;
-    uint256 public swapSlippage = 50;
+    uint256 public swapSlippage = 80;
     uint256 public minDepositAmount = 10 * WAD;
     DepositFlag public depositFlag = DepositFlag.OFF;
 
@@ -65,11 +65,10 @@ contract YEthStakerStrategy is
     event SwapSlippageSet(uint256 slippage);
 
     constructor(
-        string memory _name,
         address _gov,
         address _curve,
         address _facility
-    ) BaseStrategy(address(WETH), _name) {
+    ) BaseStrategy(address(WETH), "yETH staker strategy") {
         GOV = _gov;
 
         yETH.approve(address(styETH), type(uint256).max);
@@ -133,8 +132,8 @@ contract YEthStakerStrategy is
         uint256 debt = TokenizedStrategy.totalAssets() -
             asset.balanceOf(address(this));
         // calculate equivalent share of st-yETH
-        uint256 stakedAmount = (styETH.balanceOf(address(this)) * _amount) /
-            debt;
+        uint256 stakedAmount = styETH.balanceOf(address(this)) * 
+            _amount / debt;
         //slither-disable-next-line incorrect-equality
         if (stakedAmount == 0) {
             return;
@@ -160,7 +159,7 @@ contract YEthStakerStrategy is
         }
 
         // use curve for any remaining amount
-        require(address(curvePool) != address(0));
+        require(address(curvePool) != address(0), "!liquidity");
 
         // calculate minimum out amount based on configured slippage
         uint256 minAmountOut = unstakedYethAmount * (MAX_BPS - swapSlippage) / MAX_BPS;
@@ -199,17 +198,20 @@ contract YEthStakerStrategy is
         override
         returns (uint256 _totalAssets)
     {
-        DepositFlag flag = depositFlag;
-        if (!TokenizedStrategy.isShutdown() && flag != DepositFlag.OFF) {
-            // if forced by management, unset and continue as if turned on in full
-            if (flag == DepositFlag.FORCE_ONCE) {
-                flag = DepositFlag.ON;
+        DepositFlag _flag = depositFlag;
+        if (!TokenizedStrategy.isShutdown() && _flag != DepositFlag.OFF) {
+            uint256 threshold = minDepositAmount - 1;
+            if (_flag == DepositFlag.FORCE_ONCE) {
+                // if forced manually, treat as if deposit flag is 
+                //  turned on and remove deposit threshold
+                _flag = DepositFlag.ON;
                 depositFlag = DepositFlag.OFF;
+                threshold = 0;
             }
 
             uint256 balance = asset.balanceOf(address(this));
-            if (balance > 0) {
-                _invest(balance, flag == DepositFlag.ON);
+            if (balance > threshold) {
+                _invest(balance, _flag == DepositFlag.ON);
             }
         }
         _totalAssets = estimatedTotalAssets();
@@ -227,16 +229,19 @@ contract YEthStakerStrategy is
 
         DepositFlag flag = depositFlag;
 
-        // report if forced or if the full profit unlock time has passed
-        if (
-            flag == DepositFlag.FORCE_ONCE || block.timestamp > 
-            TokenizedStrategy.lastReport() + TokenizedStrategy.profitMaxUnlockTime()
-        ) {
+        // report if forced
+        if (flag == DepositFlag.FORCE_ONCE) {
             return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
         }
 
+        // otherwise only report if gas price is acceptable
         if (!COMMON_REPORT_TRIGGER.isCurrentBaseFeeAcceptable()) {
             return (false, bytes("BaseFee"));
+        }
+
+        // profit has been unlocked
+        if (block.timestamp > TokenizedStrategy.lastReport() + TokenizedStrategy.profitMaxUnlockTime()) {
+            return (true, abi.encodeWithSelector(TokenizedStrategy.report.selector));
         }
 
         if (flag == DepositFlag.OFF) {
@@ -281,8 +286,7 @@ contract YEthStakerStrategy is
         // use deposit facility first
         IDepositFacility facility = depositFacility;
         if (address(facility) != address(0)) {
-            uint256 deposit;
-            (deposit, ) = facility.available();
+            (uint256 deposit, ) = facility.available();
             if (deposit > _amount) {
                 deposit = _amount;
             }
@@ -481,7 +485,7 @@ contract YEthStakerStrategy is
     }
 
     /// @notice Sweep token, only management can call it
-    function sweep(address _token) external onlyManagement {
+    function sweep(address _token) external onlyEmergencyAuthorized {
         require(_token != address(asset), "!asset");
         ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
     }

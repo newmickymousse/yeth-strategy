@@ -5,7 +5,7 @@ import "forge-std/console.sol";
 import {ExtendedTest} from "./ExtendedTest.sol";
 
 import {YEthStakerStrategy, ERC20} from "../../YEthStakerStrategy.sol";
-import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
+import {IStrategyInterface, DepositFlag} from "../../interfaces/IStrategyInterface.sol";
 import {ICurvePool} from "../../interfaces/ICurvePool.sol";
 import {ICommonReportTrigger} from "../../interfaces/ICommonReportTrigger.sol";
 import {IYEthStaker} from "../../interfaces/IYEthStaker.sol";
@@ -23,8 +23,19 @@ interface IFactory {
 
 interface IDepositFacility {
     function management() external view returns (address);
-
     function set_strategy(address) external;
+    function facility() external view returns (IBaseDepositFacility);
+    function fee_rates() external view returns (uint256, uint256);
+}
+
+interface IBaseDepositFacility {
+    function management() external view returns (address);
+    function operator() external view returns (address);
+    function debt() external view returns (uint256);
+    function mint() external payable;
+    function set_mint_whitelist(address, bool) external;
+    function set_capacity(uint256) external;
+    function to_pol(uint256) external;
 }
 
 contract Setup is ExtendedTest, IEvents {
@@ -48,8 +59,8 @@ contract Setup is ExtendedTest, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz from $0.01 of 1e6 stable coins up to 1 trillion of a 1e18 coin
-    uint256 public maxFuzzAmount = 99e18; // don't go over max single withdraw
-    uint256 public minFuzzAmount = 1.001e18; // min to deposit is WAD
+    uint256 public maxFuzzAmount = 50e18; // don't go over max single withdraw
+    uint256 public minFuzzAmount = 2e18; // min to deposit is WAD
 
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;
@@ -60,6 +71,7 @@ contract Setup is ExtendedTest, IEvents {
 
     uint256 public constant WAD = 1e18;
 
+    ICurvePool public constant curvePool = ICurvePool(0x69ACcb968B19a53790f43e57558F5E443A91aF22);
     IDepositFacility public constant depositFacility = IDepositFacility(0x818a8e8240Ac57949E28577B81e9eB9ECD7fc5e1);
 
     function setUp() public virtual {
@@ -91,10 +103,9 @@ contract Setup is ExtendedTest, IEvents {
         IStrategyInterface _strategy = IStrategyInterface(
             address(
                 new YEthStakerStrategy(
-                    "yETH Strategy",
-                    address(0),
-                    address(depositFacility),
-                    GOV
+                    GOV,
+                    address(curvePool),
+                    address(depositFacility)
                 )
             )
         );
@@ -114,9 +125,15 @@ contract Setup is ExtendedTest, IEvents {
         ICommonReportTrigger(0xD98C652f02E7B987e0C258a43BCa9999DF5078cF)
             .setAcceptableBaseFee(1e18);
 
-        // setup deposit facility for usage with strategy
+        // allow strategy to use deposit facility
         vm.prank(depositFacility.management());
         depositFacility.set_strategy(address(_strategy));
+
+        // create some debt in the facility
+        IBaseDepositFacility bdf = depositFacility.facility();
+        vm.prank(bdf.management());
+        bdf.set_mint_whitelist(address(this), true);
+        bdf.mint{value: 100 ether}();
 
         return address(_strategy);
     }
@@ -180,18 +197,18 @@ contract Setup is ExtendedTest, IEvents {
         strategy.setPerformanceFee(_performanceFee);
     }
 
-    function setYethMoreValuable(bool setYethMoreValuable) public {
-        address tokenToSwap = setYethMoreValuable
+    function setYethMoreValuable(bool _setYethMoreValuable) public {
+        address tokenToSwap = _setYethMoreValuable
             ? tokenAddrs["WETH"]
             : tokenAddrs["yETH"];
         address swapper = address(555);
         uint256 amount = 500e18;
         deal(tokenToSwap, swapper, amount);
         vm.startPrank(swapper);
-        ERC20(tokenToSwap).approve(strategy.curvepool(), amount);
-        ICurvePool yethPool = ICurvePool(strategy.curvepool());
-        int128 from = setYethMoreValuable ? int128(0) : int128(1); // from weth to yeth
-        int128 to = setYethMoreValuable ? int128(1) : int128(0); // from yeth to weth
+        ERC20(tokenToSwap).approve(strategy.curvePool(), amount);
+        ICurvePool yethPool = ICurvePool(strategy.curvePool());
+        int128 from = _setYethMoreValuable ? int128(0) : int128(1); // from weth to yeth
+        int128 to = _setYethMoreValuable ? int128(1) : int128(0); // from yeth to weth
         yethPool.exchange(from, to, amount, 0);
         vm.stopPrank();
     }
@@ -206,8 +223,7 @@ contract Setup is ExtendedTest, IEvents {
 
     function _setTokenAddrs() internal {
         tokenAddrs["WETH"] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-        tokenAddrs["wstETH"] = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
         tokenAddrs["yETH"] = 0x1BED97CBC3c24A4fb5C069C6E311a967386131f7;
-        tokenAddrs["YFI"] = 0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e;
+        tokenAddrs["styETH"] = 0x583019fF0f430721aDa9cfb4fac8F06cA104d0B4;
     }
 }
