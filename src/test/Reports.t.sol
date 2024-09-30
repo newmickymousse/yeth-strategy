@@ -97,7 +97,7 @@ contract ReportsTest is Setup {
         strategy.setDepositFlag(DepositFlag.ON);
 
         // temporarily remove deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(0));
 
         (bool trigger, bytes memory message) = strategy.reportTrigger(address(strategy));
@@ -115,7 +115,7 @@ contract ReportsTest is Setup {
         mintAndDepositIntoStrategy(strategy, user, 10 ether);
 
         // restore deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(depositFacility));
 
         // cant trigger when deposit flag is off
@@ -150,7 +150,7 @@ contract ReportsTest is Setup {
         strategy.setDepositFlag(DepositFlag.ON);
 
         // temporarily remove deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(0));
 
         // Deposit into strategy
@@ -208,7 +208,7 @@ contract ReportsTest is Setup {
         strategy.setDepositFlag(DepositFlag.ON);
 
         // temporarily remove deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(0));
 
         // small deposit doesnt trigger a report
@@ -223,7 +223,7 @@ contract ReportsTest is Setup {
         mintAndDepositIntoStrategy(strategy, user, 10 ether);
 
         // restore deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(depositFacility));
 
         // report is triggered
@@ -241,7 +241,7 @@ contract ReportsTest is Setup {
         strategy.setDepositFlag(DepositFlag.OFF);
 
         // temporarily remove deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(0));
 
         // small deposit doesnt trigger a report
@@ -253,7 +253,7 @@ contract ReportsTest is Setup {
         assertEq(styETH.balanceOf(address(strategy)), 0);
 
         // restore deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(depositFacility));
 
         // force report
@@ -275,7 +275,7 @@ contract ReportsTest is Setup {
         strategy.setDepositFlag(DepositFlag.FACILITY_ONLY);
 
         // remove deposit facility
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(0));
 
         // deposit

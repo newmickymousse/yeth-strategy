@@ -345,7 +345,8 @@ contract YEthStakerStrategy is
 
     /// @notice Sets the address of the curve pool
     /// @param _pool Address of new curve pool
-    function setCurvePool(address _pool) external onlyManagement {
+    function setCurvePool(address _pool) external {
+        require(msg.sender == GOV, "!GOV");
         address previous = address(curvePool);
         curvePool = ICurvePool(_pool);
 
@@ -368,7 +369,8 @@ contract YEthStakerStrategy is
 
     /// @notice Sets the address of the deposit and withdrawal facility
     /// @param _facility Address of new facility
-    function setDepositFacility(address _facility) external onlyManagement {
+    function setDepositFacility(address _facility) external {
+        require(msg.sender == GOV, "!GOV");
         address previous = address(depositFacility);
         depositFacility = IDepositFacility(_facility);
 
@@ -405,7 +407,7 @@ contract YEthStakerStrategy is
         emit SwapSlippageSet(_slippage);
     }
 
-    /// @notice Sets the minDepositAmount amount, minimum amount to be considered for deposit
+    /// @notice Sets the minDepositAmount, minimum amount to be considered for keeper deposit
     /// @param _minDepositAmount minDepositAmount amount
     function setMinDepositAmount(
         uint256 _minDepositAmount
@@ -484,8 +486,9 @@ contract YEthStakerStrategy is
         // LSTs should be sweeped and swapped back to WETH by governance
     }
 
-    /// @notice Sweep token, only management can call it
-    function sweep(address _token) external onlyEmergencyAuthorized {
+    /// @notice Sweep token, only governance can call it
+    function sweep(address _token) external {
+        require(msg.sender == GOV, "!GOV");
         require(_token != address(asset), "!asset");
         ERC20(_token).safeTransfer(GOV, ERC20(_token).balanceOf(address(this)));
     }

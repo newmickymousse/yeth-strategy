@@ -137,7 +137,7 @@ contract OperationTest is Setup {
         address oldPool = strategy.curvePool();
         address newPool = address(1);
 
-        vm.expectRevert(bytes("!management"));
+        vm.expectRevert(bytes("!GOV"));
         strategy.setCurvePool(newPool);
 
         ERC20 WETH = ERC20(tokenAddrs["WETH"]);
@@ -148,7 +148,7 @@ contract OperationTest is Setup {
         assertEq(WETH.allowance(address(strategy), newPool), 0);
         assertEq(yETH.allowance(address(strategy), newPool), 0);
         
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setCurvePool(newPool);
 
         assertEq(WETH.allowance(address(strategy), oldPool), 0);
@@ -159,13 +159,13 @@ contract OperationTest is Setup {
 
     function test_unsetCurvePool() public {
         address oldPool = strategy.curvePool();
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setCurvePool(address(0));
 
         assertEq(ERC20(tokenAddrs["WETH"]).allowance(address(strategy), oldPool), 0);
         assertEq(ERC20(tokenAddrs["yETH"]).allowance(address(strategy), oldPool), 0);
 
-        vm.prank(management);
+        vm.prank(GOV);
         vm.expectRevert();
         strategy.setDepositFacility(address(0));
     }
@@ -175,7 +175,7 @@ contract OperationTest is Setup {
         address oldFacility = strategy.depositFacility();
         address newFacility = address(1);
 
-        vm.expectRevert(bytes("!management"));
+        vm.expectRevert(bytes("!GOV"));
         strategy.setDepositFacility(newFacility);
 
         ERC20 WETH = ERC20(tokenAddrs["WETH"]);
@@ -186,7 +186,7 @@ contract OperationTest is Setup {
         assertEq(WETH.allowance(address(strategy), newFacility), 0);
         assertEq(yETH.allowance(address(strategy), newFacility), 0);
         
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(newFacility);
 
         assertEq(WETH.allowance(address(strategy), oldFacility), 0);
@@ -198,13 +198,13 @@ contract OperationTest is Setup {
     function test_unsetDepositFacility() public {
         address oldFacility = strategy.depositFacility();
 
-        vm.prank(management);
+        vm.prank(GOV);
         strategy.setDepositFacility(address(0));
 
         assertEq(ERC20(tokenAddrs["WETH"]).allowance(address(strategy), oldFacility), 0);
         assertEq(ERC20(tokenAddrs["yETH"]).allowance(address(strategy), oldFacility), 0);
 
-        vm.prank(management);
+        vm.prank(GOV);
         vm.expectRevert();
         strategy.setCurvePool(address(0));
     }
