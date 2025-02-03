@@ -501,6 +501,10 @@ contract YEthStakerStrategy is
         IWeightGovernance(_target).vote(_votes);
     }
 
+    function toFacility(uint256 _amount) external onlyManagement {
+        _invest(_amount, false);
+    }
+
     /// @notice Set auction contract, only management can call it
     function setAuction(address _auction) external onlyManagement {
         auction = _auction;
